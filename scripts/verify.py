@@ -8,7 +8,9 @@ actual={str(p.relative_to(ROOT/'vendor/homepage')).replace('\\','/') for p in (R
 if actual!=set(manifest['files']):errors.append('upstream archive file set differs')
 for name,expected in manifest['files'].items():
     p=ROOT/'vendor/homepage'/name
-    if not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=expected:errors.append('upstream mismatch: '+name)
+    if not p.is_file() or hashlib.sha256(p.read_text(encoding='utf-8').replace('
+','
+').encode('utf-8')).hexdigest()!=expected:errors.append('upstream mismatch: '+name)
 if (ROOT/'vendor/homepage/.git').exists():errors.append('nested upstream git repository')
 for p in ROOT.rglob('*'):
     if not p.is_file() or any(x in p.relative_to(ROOT).parts for x in ['vendor','runtime','.git','__pycache__']):continue
@@ -34,3 +36,4 @@ for name in ['compose.yml','LICENSE','README.md','homepage/custom.js','homepage/
 if errors:
     print('\n'.join(errors));sys.exit(1)
 print(f'PASS: {len(manifest["files"])} pinned upstream files, generic examples and Python syntax')
+

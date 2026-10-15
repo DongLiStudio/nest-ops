@@ -29,7 +29,7 @@
   const row=el('div','ops-bars');row.tabIndex=0;row.setAttribute('role','group');row.setAttribute('aria-label',s.name+'可用性历史，点击色块或左右方向键查看时间');
   let active=s.bars.length-1;const info=el('span','ops-bar-info');info.hidden=true;info.setAttribute('role','status');
   const show=i=>{active=Math.max(0,Math.min(s.bars.length-1,i));info.textContent=row.children[active].getAttribute('aria-label');info.hidden=false;};
-  for(const [i,bar] of s.bars.entries()){const n=el('span','ops-bar ops-'+bar.state);n.setAttribute('role','img');n.onclick=()=>show(i);
+  for(const [i,bar] of s.bars.entries()){const n=el('span','ops-bar ops-'+bar.state);n.setAttribute('role','img');n.onclick=()=>show(i);n.onmouseenter=()=>show(i);n.onmouseleave=()=>{info.hidden=true;};
    const label=stamp(bar.start)+' 至 '+stamp(bar.end)+' · '+labels[bar.state]+' · 可用率 '+pct(bar.availability)+' · 覆盖 '+pct(bar.coverage);
    n.setAttribute('aria-label',label);row.append(n);}
   row.append(info);row.onkeydown=e=>{if(['ArrowLeft','ArrowRight','Enter',' '].includes(e.key)){e.preventDefault();show(active+(e.key==='ArrowLeft'?-1:e.key==='ArrowRight'?1:0));}else if(e.key==='Escape')info.hidden=true;};row.onblur=()=>{info.hidden=true;};return row;
@@ -70,27 +70,27 @@
  function filters(){
   const row=el('div','ops-filter-row');row.append(glassSelect('按服务器筛选',[['','全部服务器'],...data.servers.map(h=>[h.id,h.name])],filterHost,v=>{filterHost=v;listPage=1;renderBody();}),glassSelect('按状态筛选',[['all','全部状态'],['abnormal','仅异常'],['unknown','状态未知']],only,v=>{only=v;listPage=1;renderBody();}));return row;
  }
-
+ const descriptions={growth:'飞书登录与成长管理',website:'公司与服务介绍','registry-ui':'镜像浏览与管理',skin:'角色与皮肤管理',mcsm:'游戏实例与节点管理',blog:'文章与知识分享',miaomiao:'苗苗的生活与文字',images:'图片上传与管理',talent:'人才与岗位管理',homepage:'统一访问与设备入口',authelia:'账号与双因素认证',tos:'NAS 管理与存储',allinssl:'证书申请与自动续期',ups:'供电状态与保护策略',ddns:'家庭动态域名更新',webhook:'GitHub 事件与飞书通知',mihomo:'轻量通用服务 · 代理与连接管理'};
  function serviceIcon(s){
   const wrapper=el('span','ops-entry-icon');
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.7');
-  const path=document.createElementNS(svg.namespaceURI,'path');const key=s.icon||s.id.split(':')[1];
+  const path=document.createElementNS(svg.namespaceURI,'path');const key=s.id.split(':')[1];
   const shapes={images:'M4 4h16v16H4z M4 17l5-5 4 4 3-3 4 4 M8 8h.01',blog:'M5 3h14v18H5z M8 7h8 M8 11h8 M8 15h5',miaomiao:'M5 3h14v18H5z M8 7h8 M8 11h8 M8 15h5',growth:'M3 18l6-6 4 3 8-11 M16 4h5v5',mcsm:'M3 8h18v12H3z M7 8V4h10v4 M8 13h8 M12 10v6',registry:'M4 5h16v14H4z M8 9h8 M8 13h5','registry-ui':'M4 5h16v14H4z M8 9h8 M8 13h5',skin:'M5 4h14v16H5z M8 8h8 M8 12h8',homepage:'M4 5h16v14H4z M8 9h8 M8 13h5',authelia:'M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z M9 12l2 2 4-4',ups:'M13 2L5 13h6l-1 9 8-11h-6z',ddns:'M4 7h16 M4 12h16 M4 17h16 M8 4v16 M16 4v16',allinssl:'M5 4h14v16H5z M8 8h8 M8 12h5',talent:'M4 19v-2a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v2 M12 11a4 4 0 1 0-0.1-8 4 4 0 0 0.1 8'};
   path.setAttribute('d',shapes[key]||({'tos':'M3 5h18v14H3z M6 9h12 M6 14h2 M11 14h2','webhook':'M8 8h8v8H8z M2 12h6 M16 12h6 M12 2v6 M12 16v6','mihomo':'M3 6h18 M3 12h18 M3 18h18 M7 3v6 M16 9v6 M10 15v6'}[key])||'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20 M2 12h20 M12 2c-5 6-5 14 0 20 M12 2c5 6 5 14 0 20');svg.append(path);wrapper.append(svg);return wrapper;
  }
  function servicesView(){
   body.append(filters());const services=filtered(data.services).filter(s=>entry(s));
   if(!services.length){body.append(el('p','ops-empty','没有匹配的服务入口。可以在服务器页查看全部已登记服务。'));return;}
-  const category=s=>s.category||'开发与运维';
+  const category=s=>{const key=s.id.split(':')[1];if(['growth','talent'].includes(key))return '业务系统';if(['blog','miaomiao','website','images'].includes(key))return '网站与内容';if(['mcsm','skin','palworld'].includes(key))return '游戏相关';if(['ups','tos','ddns'].includes(key))return '家庭服务';return '开发与运维';};
   for(const name of ['家庭服务','业务系统','网站与内容','游戏相关','开发与运维',...new Set(services.map(category))].filter((v,i,a)=>a.indexOf(v)===i)){
    const items=services.filter(s=>category(s)===name);if(!items.length)continue;
    const section=el('section','ops-category');section.append(el('h2','',name));const grid=el('div','ops-entry-grid');
    for(const s of items){
     const card=el('article','ops-glass ops-entry');const link=entry(s);link.className='ops-entry-link';link.replaceChildren(serviceIcon(s));
-    const copy=el('span','ops-entry-copy');copy.append(el('strong','',s.name),el('small','',s.description||s.category));link.append(copy);card.append(link);
+    const copy=el('span','ops-entry-copy');copy.append(el('strong','',s.name),el('small','',descriptions[s.id.split(':')[1]]||s.category));link.append(copy);card.append(link);
     const dot=mark(s.state);dot.classList.add('ops-entry-status');card.append(dot,button('查看状态',()=>goService(s.id),'ops-entry-detail'));
-    if(s.metric==='ups'){const u=data.household?.ups||{};const metrics=el('div','ops-home-metrics');const seconds=Number(u.battery_runtime);for(const [label,value] of [['供电状态',u.status==='ONLINE'?'市电供电':u.status==='ON_BATTERY'?'电池供电':'未知'],['电池电量',u.battery_charge||'—'],['估算续航',Number.isFinite(seconds)?Math.floor(seconds/60)+'分 '+Math.floor(seconds%60)+'秒':'—'],['当前负载',u.load_percent||'—']]){const item=el('div');item.append(el('small','',label),el('strong','',value));metrics.append(item);}card.append(metrics);}
-    if(s.metric==='ddns'){const d=data.household?.ddns||{};const metrics=el('div','ops-home-metrics');const item=el('div');item.append(el('small','','家庭域名 · 公网 IPv4'),el('strong','',d.ipv4||'—'));metrics.append(item);card.append(metrics);}
+    if(s.id==='home-compute-1:ups'){const u=data.household?.ups||{};const metrics=el('div','ops-home-metrics');const seconds=Number(u.battery_runtime);for(const [label,value] of [['供电状态',u.status==='ONLINE'?'市电供电':u.status==='ON_BATTERY'?'电池供电':'未知'],['电池电量',u.battery_charge||'—'],['估算续航',Number.isFinite(seconds)?Math.floor(seconds/60)+'分 '+Math.floor(seconds%60)+'秒':'—'],['当前负载',u.load_percent||'—']]){const item=el('div');item.append(el('small','',label),el('strong','',value));metrics.append(item);}card.append(metrics);}
+    if(s.id==='home-compute-1:ddns'){const d=data.household?.ddns||{};const metrics=el('div','ops-home-metrics');const item=el('div');item.append(el('small','','家庭域名 · 公网 IPv4'),el('strong','',d.ipv4||'—'));metrics.append(item);card.append(metrics);}
     grid.append(card);
    }section.append(grid);body.append(section);
   }
