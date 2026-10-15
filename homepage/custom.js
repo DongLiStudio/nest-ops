@@ -2,7 +2,7 @@
 (() => {
  if(window.__nestOpsBootstrap)return;window.__nestOpsBootstrap=true;
  document.documentElement.lang='zh-CN';document.documentElement.setAttribute('translate','no');
- const asset='/_ops/ui.js';let script,timer;
+ const style=document.createElement('link');style.rel='stylesheet';style.href='/_ops/ui.css?v=20261015-complete';document.head.append(style);const asset='/_ops/ui.js?v=20261015-complete';let script,timer;
  function failure(){
   if(document.querySelector('#home-console')||document.querySelector('#home-console-load-error'))return;
   const footer=document.querySelector('#footer');if(!footer)return;

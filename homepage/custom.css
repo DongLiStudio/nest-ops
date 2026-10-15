@@ -1,4 +1,3 @@
-@import url('/_ops/ui.css');
 /* Homepage header optical styling. No legacy service-card or hidden-layout rules. */
 :root { --home-ink:#f5faff; --home-muted:#d4e5f0; --home-accent:#bceaff; --glass-fill:rgba(11,31,45,.22); --glass-rim:rgba(231,250,255,.35); }
 body { color:var(--home-ink); font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif; -webkit-font-smoothing:antialiased; }
