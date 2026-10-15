@@ -1,0 +1,1284 @@
+{
+    "common": {
+        "bytes": "{{value, bytes}}",
+        "bits": "{{value, bytes(bits: true)}}",
+        "bbytes": "{{value, bytes(binary: true)}}",
+        "bbits": "{{value, bytes(bits: true; binary: true)}}",
+        "byterate": "{{value, rate(bits: false)}}",
+        "bibyterate": "{{value, rate(bits: false; binary: true)}}",
+        "bitrate": "{{value, rate(bits: true)}}",
+        "bibitrate": "{{value, rate(bits: true; binary: true)}}",
+        "percent": "{{value, percent}}",
+        "number": "{{value, number}}",
+        "ms": "{{value, number}}",
+        "date": "{{value, date}}",
+        "relativeDate": "{{value, relativeDate}}",
+        "duration": "{{value, duration}}",
+        "months": "mes",
+        "days": "d",
+        "hours": "h",
+        "minutes": "m",
+        "seconds": "s"
+    },
+    "auth": {
+        "signout": "Odhlásiť sa"
+    },
+    "widget": {
+        "missing_type": "Chýba typ widgetu: {{type}}",
+        "api_error": "Chyba API",
+        "information": "Informácia",
+        "status": "Stav",
+        "url": "Odkaz",
+        "raw_error": "Nevyriešená chyba",
+        "response_data": "Dáta odpovede"
+    },
+    "weather": {
+        "current": "Aktuálna poloha",
+        "allow": "Kliknutím povolíte",
+        "updating": "Prebieha aktualizácia",
+        "wait": "Počkajte prosím"
+    },
+    "search": {
+        "placeholder": "Hľadať…",
+        "provider": "Vyhľadávač: {{name}}",
+        "select_provider": "Vyberte vyhľadávač"
+    },
+    "resources": {
+        "cpu": "CPU",
+        "mem": "RAM",
+        "total": "Celkovo",
+        "free": "Voľné",
+        "used": "Využité",
+        "load": "Záťaž",
+        "temp": "TEPLOTA",
+        "max": "Max.",
+        "uptime": "BEŽÍ"
+    },
+    "unifi": {
+        "users": "Používatelia",
+        "uptime": "Prevádzka",
+        "days": "Dní",
+        "wan": "WAN",
+        "lan": "Lokálna sieť",
+        "wlan": "WLAN",
+        "devices": "Zariadenia",
+        "lan_devices": "Zariadenia LAN",
+        "wlan_devices": "Zariadenia WLAN",
+        "lan_users": "Použ. LAN",
+        "wlan_users": "Použ. WLAN",
+        "up": "BEŽÍ",
+        "down": "NEBEŽÍ",
+        "wait": "Čakajte, prosím",
+        "empty_data": "Stav podsystému neznámy"
+    },
+    "unifi_drive": {
+        "healthy": "Zdravý",
+        "degraded": "Degraded",
+        "no_data": "No storage data available"
+    },
+    "duplicati": {
+        "jobs": "Úlohy",
+        "stored": "Uložené",
+        "lastBackup": "Naposledy spustené",
+        "nextRun": "Nasledujúce spustenie",
+        "running": "Spustené",
+        "warnings": "Upozornenia",
+        "errors": "Chyby"
+    },
+    "docker": {
+        "rx": "Prijaté",
+        "tx": "Odoslané",
+        "mem": "RAM",
+        "cpu": "CPU",
+        "running": "Beží",
+        "offline": "Nedostupný",
+        "error": "Chyba",
+        "unknown": "Neznáme",
+        "healthy": "Zdravý",
+        "starting": "Spúšťa sa",
+        "unhealthy": "Nezdravý",
+        "not_found": "Nenájdené",
+        "exited": "Ukončené",
+        "partial": "Čiastočný",
+        "created": "Vytvorené",
+        "paused": "Pozastavené",
+        "restarting": "Reštartuje sa",
+        "removing": "Odstraňuje sa",
+        "dead": "Mŕtve"
+    },
+    "ping": {
+        "error": "Chyba",
+        "ping": "Odozva",
+        "down": "Sťahovanie",
+        "up": "Nahrávanie",
+        "not_available": "Nedostupný"
+    },
+    "siteMonitor": {
+        "http_status": "HTTP stavový kód",
+        "error": "Chyba",
+        "response": "Odpoveď",
+        "down": "Nedostupné",
+        "up": "Beží",
+        "not_available": "Nedostupné"
+    },
+    "emby": {
+        "playing": "Prehrávané",
+        "transcoding": "Prekódovávané",
+        "bitrate": "Prenosová rýchlosť",
+        "no_active": "Žiadny aktívny stream",
+        "movies": "Filmy",
+        "series": "Seriály",
+        "episodes": "Epizódy",
+        "songs": "Skladby"
+    },
+    "jellyfin": {
+        "playing": "Prehráva sa",
+        "transcoding": "Prebieha prekódovanie",
+        "bitrate": "Prenosová rýchlosť",
+        "no_active": "Žiadne aktívne vysielania",
+        "movies": "Filmov",
+        "series": "Seriálov",
+        "episodes": "Epizód",
+        "songs": "Skladieb",
+        "albums": "Albumov"
+    },
+    "esphome": {
+        "offline": "Nedostupné",
+        "offline_alt": "Nedostupné",
+        "online": "Online",
+        "total": "Celkom",
+        "unknown": "Neznáme"
+    },
+    "evcc": {
+        "pv_power": "Produkcia",
+        "battery_soc": "Batéria",
+        "grid_power": "Mriežka",
+        "home_power": "Spotreba",
+        "charge_power": "Nabíjačka",
+        "kilowatt": "kW"
+    },
+    "flood": {
+        "download": "Sťahovanie",
+        "upload": "Nahrávanie",
+        "leech": "Leechované",
+        "seed": "Seedované"
+    },
+    "freshrss": {
+        "subscriptions": "Odbery",
+        "unread": "Neprečítané"
+    },
+    "fritzbox": {
+        "connectionStatus": "Stav",
+        "connectionStatusUnconfigured": "Nenastavený",
+        "connectionStatusConnecting": "Pripájanie",
+        "connectionStatusAuthenticating": "Overovanie",
+        "connectionStatusPendingDisconnect": "Čakám na odpojenie",
+        "connectionStatusDisconnecting": "Odpájanie",
+        "connectionStatusDisconnected": "Odpojené",
+        "connectionStatusConnected": "Pripojené",
+        "uptime": "Dostupnosť",
+        "maxDown": "Max. sťahovanie",
+        "maxUp": "Max. nahrávanie",
+        "down": "Nedostupné",
+        "up": "Beží",
+        "received": "Prijaté",
+        "sent": "Odoslané",
+        "externalIPAddress": "Ext. IP",
+        "externalIPv6Address": "Ext. IPv6",
+        "externalIPv6Prefix": "Ext. IPv6-Prefix"
+    },
+    "caddy": {
+        "upstreams": "Odosielanie dát",
+        "requests": "Aktuálne požiadavky",
+        "requests_failed": "Neúspešné požiadavky"
+    },
+    "changedetectionio": {
+        "totalObserved": "Spolu kontrolovaných",
+        "diffsDetected": "Nájdených rozdielov"
+    },
+    "channelsdvrserver": {
+        "shows": "Relácie",
+        "recordings": "Záznamy",
+        "scheduled": "Naplánované",
+        "passes": "Odvysielané"
+    },
+    "tautulli": {
+        "playing": "Prehráva sa",
+        "transcoding": "Transcoding",
+        "bitrate": "Prenosová rýchlosť",
+        "no_active": "No Active Streams",
+        "plex_connection_error": "Skontroluj spojenie s Plex"
+    },
+    "tracearr": {
+        "no_active": "No Active Streams",
+        "streams": "Streams",
+        "transcodes": "Transcodes",
+        "directplay": "Direct Play",
+        "bitrate": "Prenosová rýchlosť"
+    },
+    "omada": {
+        "connectedAp": "Pripojené prístupové body",
+        "activeUser": "Aktívne zariadenia",
+        "alerts": "Upozornenia",
+        "connectedGateways": "Connected gateways",
+        "connectedSwitches": "Pripojené prepínače"
+    },
+    "nzbget": {
+        "rate": "Rýchlosť",
+        "remaining": "Zostávajúce",
+        "downloaded": "Stiahnuté"
+    },
+    "plex": {
+        "streams": "Aktívne vysielanie",
+        "albums": "Albumy",
+        "movies": "Filmov",
+        "tv": "Seriály"
+    },
+    "sabnzbd": {
+        "rate": "Rate",
+        "queue": "V poradí",
+        "timeleft": "Zostávajúci čas"
+    },
+    "rutorrent": {
+        "active": "Aktívne",
+        "upload": "Nahrávanie",
+        "download": "Download"
+    },
+    "transmission": {
+        "download": "Download",
+        "upload": "Nahrávanie",
+        "leech": "Leech",
+        "seed": "Seed"
+    },
+    "qbittorrent": {
+        "download": "Download",
+        "upload": "Nahrávanie",
+        "leech": "Leech",
+        "seed": "Seed"
+    },
+    "qui": {
+        "leech": "Leech",
+        "download": "Download",
+        "seed": "Seed",
+        "upload": "Upload",
+        "total": "Total",
+        "errored": "Errored",
+        "ratio": "Ratio",
+        "freeSpace": "Free"
+    },
+    "qnap": {
+        "cpuUsage": "Využitie CPU",
+        "memUsage": "Využitie pamäte",
+        "systemTempC": "Teplota systému",
+        "poolUsage": "Využitie zväzku",
+        "volumeUsage": "Využitie partície",
+        "invalid": "Neplatný"
+    },
+    "deluge": {
+        "download": "Download",
+        "upload": "Nahrávanie",
+        "leech": "Leech",
+        "seed": "Seed"
+    },
+    "develancacheui": {
+        "cachehitbytes": "Cache Hit Bytes",
+        "cachemissbytes": "Cache Miss Bytes"
+    },
+    "downloadstation": {
+        "download": "Download",
+        "upload": "Nahrávanie",
+        "leech": "Leech",
+        "seed": "Seed"
+    },
+    "sonarr": {
+        "wanted": "Žiadané",
+        "queued": "V poradí",
+        "series": "Series",
+        "queue": "Poradie",
+        "unknown": "Neznáme"
+    },
+    "radarr": {
+        "wanted": "Wanted",
+        "missing": "Chýbajúce",
+        "queued": "V poradí",
+        "movies": "Filmov",
+        "queue": "Poradie",
+        "unknown": "Neznáme"
+    },
+    "lidarr": {
+        "wanted": "Wanted",
+        "queued": "V poradí",
+        "artists": "Interpreti"
+    },
+    "readarr": {
+        "wanted": "Wanted",
+        "queued": "V poradí",
+        "books": "Knihy"
+    },
+    "bazarr": {
+        "missingEpisodes": "Chýbajúce epizódy",
+        "missingMovies": "Chýbajúce filmy"
+    },
+    "ombi": {
+        "pending": "Čakajúce",
+        "approved": "Schválené",
+        "available": "Dostupné"
+    },
+    "seerr": {
+        "pending": "Čakajúce",
+        "approved": "Schválené",
+        "available": "Dostupné",
+        "completed": "Dokončené",
+        "processing": "Processing",
+        "issues": "Neriešené problémy"
+    },
+    "netalertx": {
+        "total": "Celkom",
+        "connected": "Pripojené",
+        "new_devices": "Nové zariadenia",
+        "down_alerts": "Upozornenia o výpadkoch"
+    },
+    "pihole": {
+        "queries": "Dopyty",
+        "blocked": "Zablokované",
+        "blocked_percent": "Blokované",
+        "gravity": "Gravity"
+    },
+    "adguard": {
+        "queries": "Požiadaviek",
+        "blocked": "Blokované",
+        "filtered": "Filtrované",
+        "latency": "Odozva"
+    },
+    "speedtest": {
+        "upload": "Nahrávanie",
+        "download": "Download",
+        "ping": "Odozva"
+    },
+    "portainer": {
+        "running": "Beží",
+        "stopped": "Zastavené",
+        "total": "Celkom"
+    },
+    "suwayomi": {
+        "download": "Downloaded",
+        "nondownload": "Non-Downloaded",
+        "read": "Read",
+        "unread": "Neprečítané",
+        "downloadedread": "Downloaded & Read",
+        "downloadedunread": "Downloaded & Unread",
+        "nondownloadedread": "Non-Downloaded & Read",
+        "nondownloadedunread": "Non-Downloaded & Unread"
+    },
+    "tailscale": {
+        "address": "Adresa",
+        "expires": "Vyprší",
+        "never": "Nikdy",
+        "user": "Používateľ",
+        "hostname": "Názov hostiteľa",
+        "name": "Názov",
+        "client_version": "Verzia klienta",
+        "os": "Operačný systém",
+        "created": "Vytvorené",
+        "authorized": "Autorizované",
+        "is_external": "Je externý",
+        "update_available": "Dostupná aktualizácia",
+        "tags": "Štítky",
+        "last_seen": "Naposledy videné",
+        "now": "Teraz",
+        "years": "{{number}}r",
+        "weeks": "{{number}}t",
+        "days": "{{number}}d",
+        "hours": "{{number}}h",
+        "minutes": "{{number}}m",
+        "seconds": "{{number}}s",
+        "ago": "Pred {{value}}",
+        "true": "Áno",
+        "false": "Nie"
+    },
+    "technitium": {
+        "totalQueries": "Požiadaviek",
+        "totalNoError": "Success",
+        "totalServerFailure": "Failures",
+        "totalNxDomain": "NX Domains",
+        "totalRefused": "Refused",
+        "totalAuthoritative": "Authoritative",
+        "totalRecursive": "Recursive",
+        "totalCached": "Cached",
+        "totalBlocked": "Blokované",
+        "totalDropped": "Dropped",
+        "totalClients": "Klienti"
+    },
+    "tdarr": {
+        "queue": "Poradie",
+        "processed": "Spracované",
+        "errored": "Chybné",
+        "saved": "Uložené"
+    },
+    "traefik": {
+        "routers": "Smerovače",
+        "services": "Služby",
+        "middleware": "Midlvér"
+    },
+    "trilium": {
+        "version": "Verzia",
+        "notesCount": "Poznámky",
+        "dbSize": "Veľkosť databázy",
+        "unknown": "Neznáme"
+    },
+    "navidrome": {
+        "nothing_streaming": "No Active Streams",
+        "please_wait": "Počkajte prosím"
+    },
+    "npm": {
+        "enabled": "Povolené",
+        "disabled": "Zakázané",
+        "total": "Celkom"
+    },
+    "coinmarketcap": {
+        "configure": "Nastavte jednu alebo viac kryptomien na sledovanie",
+        "1hour": "1 Hodina",
+        "1day": "1 Deň",
+        "7days": "7 Dní",
+        "30days": "30 Dní"
+    },
+    "gotify": {
+        "apps": "Aplikácie",
+        "clients": "Klienti",
+        "messages": "Správy"
+    },
+    "prowlarr": {
+        "enableIndexers": "Indexery",
+        "numberOfGrabs": "Zachytení",
+        "numberOfQueries": "Požiadaviek",
+        "numberOfFailGrabs": "Neúspešné zachytenia",
+        "numberOfFailQueries": "Neúspešné dopyty"
+    },
+    "jackett": {
+        "configured": "Nastavený",
+        "errored": "Errored"
+    },
+    "strelaysrv": {
+        "numActiveSessions": "Relácie",
+        "numConnections": "Spojenia",
+        "dataRelayed": "Prenesené",
+        "transferRate": "Rate"
+    },
+    "mastodon": {
+        "user_count": "Používateľov",
+        "status_count": "Príspevky",
+        "domain_count": "Domény"
+    },
+    "medusa": {
+        "wanted": "Wanted",
+        "queued": "V poradí",
+        "series": "Series"
+    },
+    "minecraft": {
+        "players": "Hráči",
+        "version": "Verzia",
+        "status": "Stav",
+        "up": "Online",
+        "down": "Nedostupné"
+    },
+    "miniflux": {
+        "read": "Prečítané",
+        "unread": "Neprečítané"
+    },
+    "authentik": {
+        "users": "Používateľov",
+        "loginsLast24H": "Prihlás. (24 hod.)",
+        "failedLoginsLast24H": "Neúspešné prihlás. (24 hod.)",
+        "authorizationsLast24H": "Auths (24h)"
+    },
+    "proxmox": {
+        "mem": "RAM",
+        "cpu": "CPU",
+        "lxc": "LXC",
+        "vms": "Virtuálne stroje"
+    },
+    "pulse": {
+        "nodes": "Uzly",
+        "vms": "Virtuálne stroje",
+        "lxcs": "LXC"
+    },
+    "glances": {
+        "cpu": "CPU",
+        "load": "Záťaž",
+        "wait": "Čakajte, prosím",
+        "temp": "TEPL",
+        "_temp": "Teplota",
+        "warn": "Upozornení",
+        "uptime": "BEŽÍ",
+        "total": "Celkom",
+        "free": "Voľné",
+        "used": "Využité",
+        "days": "d",
+        "hours": "h",
+        "crit": "Kritické",
+        "read": "Read",
+        "write": "Zápis",
+        "gpu": "GPU",
+        "mem": "Pamäť",
+        "swap": "Swap"
+    },
+    "quicklaunch": {
+        "bookmark": "Záložka",
+        "service": "Služba",
+        "search": "Hľadať",
+        "custom": "Vlastné",
+        "visit": "Navštíviť",
+        "url": "URL adresa",
+        "searchsuggestion": "Návrh"
+    },
+    "wmo": {
+        "0-day": "Slnečno",
+        "0-night": "Jasno",
+        "1-day": "Prevažne slnečno",
+        "1-night": "Prevažne jasno",
+        "2-day": "Čiastočne zamračené",
+        "2-night": "Čiastočne zamračené",
+        "3-day": "Oblačno",
+        "3-night": "Oblačno",
+        "45-day": "Hmlisto",
+        "45-night": "Hmlisto",
+        "48-day": "Hmlisto",
+        "48-night": "Hmlisto",
+        "51-day": "Mierne mrholenie",
+        "51-night": "Slabé mrholenie",
+        "53-day": "Mrholenie",
+        "53-night": "Mrholenie",
+        "55-day": "Silné mrholenie",
+        "55-night": "Silné mrholenie",
+        "56-day": "Mierne mrazivé mrholenie",
+        "56-night": "Jemné mrznúce mrholenie",
+        "57-day": "Mrazivé mrholenie",
+        "57-night": "Mrznúce mrholenie",
+        "61-day": "Slabý dážď",
+        "61-night": "Slabý dážď",
+        "63-day": "Dážď",
+        "63-night": "Dážď",
+        "65-day": "Silný dážď",
+        "65-night": "Silný dážď",
+        "66-day": "Mrazivý dážď",
+        "66-night": "Mrznúci dážď",
+        "67-day": "Mrznúci dážď",
+        "67-night": "Mrznúci dážď",
+        "71-day": "Mierne sneženie",
+        "71-night": "Slabé sneženie",
+        "73-day": "Sneženie",
+        "73-night": "Sneženie",
+        "75-day": "Silné sneženie",
+        "75-night": "Husté sneženie",
+        "77-day": "Snehové vločky",
+        "77-night": "Snow Grains",
+        "80-day": "Mierne prehánky",
+        "80-night": "Mierne prehánky",
+        "81-day": "Prehánky",
+        "81-night": "Prehánky",
+        "82-day": "Silné prehánky",
+        "82-night": "Silné prehánky",
+        "85-day": "Snehové prehánky",
+        "85-night": "Snehové prehánky",
+        "86-day": "Snehové prehánky",
+        "86-night": "Snehové prehánky",
+        "95-day": "Búrka",
+        "95-night": "Búrka",
+        "96-day": "Búrka s krupobitím",
+        "96-night": "Búrka s krupobitím",
+        "99-day": "Búrka s krupobitím",
+        "99-night": "Búrka s krupobitím"
+    },
+    "homebridge": {
+        "available_update": "Systém",
+        "updates": "Aktualizácie",
+        "update_available": "Dostupná aktualizácia",
+        "up_to_date": "Aktuálny",
+        "child_bridges": "Podradené premostenia",
+        "child_bridges_status": "{{ok}}/{{total}}",
+        "up": "Beží",
+        "pending": "Čakajúce",
+        "down": "Nedostupné",
+        "ok": "Ok"
+    },
+    "healthchecks": {
+        "new": "Nový",
+        "up": "Beží",
+        "grace": "V dodatočnej lehote",
+        "down": "Nedostupné",
+        "paused": "Pozastavené",
+        "status": "Stav",
+        "last_ping": "Poslendný ping",
+        "never": "Zatiaľ žiadne ping-y"
+    },
+    "watchtower": {
+        "containers_scanned": "Oskenované",
+        "containers_updated": "Aktualizované",
+        "containers_failed": "Zlyhané"
+    },
+    "autobrr": {
+        "approvedPushes": "Schválené",
+        "rejectedPushes": "Odmietnuté",
+        "filters": "Filtre",
+        "indexers": "Indexers"
+    },
+    "tubearchivist": {
+        "downloads": "Poradie",
+        "videos": "Videá",
+        "channels": "Kanály",
+        "playlists": "Playlisty"
+    },
+    "truenas": {
+        "load": "Záťaž systému",
+        "uptime": "Dostupnosť",
+        "alerts": "Upozornenia"
+    },
+    "pyload": {
+        "speed": "Rýchlosť",
+        "active": "Active",
+        "queue": "Poradie",
+        "total": "Celkom"
+    },
+    "gluetun": {
+        "public_ip": "Verejná IP",
+        "region": "Región",
+        "country": "Krajina",
+        "port_forwarded": "Port Forwarded"
+    },
+    "hdhomerun": {
+        "channels": "Channels",
+        "hd": "HD",
+        "tunerCount": "Tunery",
+        "channelNumber": "Kanál",
+        "channelNetwork": "Sieť",
+        "signalStrength": "Sila",
+        "signalQuality": "Kvalita",
+        "symbolQuality": "Kvalita",
+        "networkRate": "Bitrate",
+        "clientIP": "Klient"
+    },
+    "scrutiny": {
+        "passed": "Úspešný",
+        "failed": "Failed",
+        "unknown": "Neznáme"
+    },
+    "paperlessngx": {
+        "inbox": "Schránka správ",
+        "total": "Celkom"
+    },
+    "pangolin": {
+        "orgs": "Orgs",
+        "sites": "Sites",
+        "resources": "Resources",
+        "targets": "Targets",
+        "traffic": "Traffic",
+        "in": "In",
+        "out": "Out"
+    },
+    "peanut": {
+        "battery_charge": "Nabitie batérie",
+        "ups_load": "Záťaž UPS",
+        "ups_status": "Status UPS",
+        "online": "Online",
+        "on_battery": "Na batérii",
+        "low_battery": "Slabá batéria"
+    },
+    "nextdns": {
+        "wait": "Čakajte, prosím",
+        "no_devices": "Informácie o zariadení nezískané"
+    },
+    "mikrotik": {
+        "cpuLoad": "Využitie CPU",
+        "memoryUsed": "Využitie pamäte",
+        "uptime": "Dostupnosť",
+        "numberOfLeases": "Pridelené adresy"
+    },
+    "xteve": {
+        "streams_all": "Všetky vysielania",
+        "streams_active": "Active Streams",
+        "streams_xepg": "XEPG kanály"
+    },
+    "opendtu": {
+        "yieldDay": "Dnes",
+        "absolutePower": "Činný výkon",
+        "relativePower": "Relatívny výkon",
+        "limit": "Limit"
+    },
+    "opnsense": {
+        "cpu": "Zátaž procesora",
+        "memory": "Aktívna pamäť",
+        "wanUpload": "WAN nahrávanie",
+        "wanDownload": "WAN sťahovanie"
+    },
+    "moonraker": {
+        "printer_state": "Stav tlačiarne",
+        "print_status": "Stav tlače",
+        "print_progress": "Priebeh",
+        "layers": "Vrstvy"
+    },
+    "octoprint": {
+        "printer_state": "Stav",
+        "temp_tool": "Teplota extrudéra",
+        "temp_bed": "Teplota podložky",
+        "job_completion": "Priebeh"
+    },
+    "cloudflared": {
+        "origin_ip": "Zdrojová IP",
+        "status": "Stav"
+    },
+    "pfsense": {
+        "load": "Priemerné zaťaženie",
+        "memory": "Využitie pamäte",
+        "wanStatus": "Stav WAN",
+        "up": "Beží",
+        "down": "Nedostupné",
+        "temp": "Temp",
+        "disk": "Využitie disku",
+        "wanIP": "IP adresa WAN"
+    },
+    "proxmoxbackupserver": {
+        "datastore_usage": "Dátové úložisko",
+        "failed_tasks_24h": "Zlyhané úlohy za 24h",
+        "cpu_usage": "CPU",
+        "memory_usage": "Pamäť"
+    },
+    "immich": {
+        "users": "Používateľov",
+        "photos": "Fotografií",
+        "videos": "Videí",
+        "storage": "Úložisko"
+    },
+    "uptimekuma": {
+        "up": "Weby dostupné",
+        "down": "Weby nedostupné",
+        "uptime": "Dostupnosť",
+        "incident": "Udalosť",
+        "m": "m"
+    },
+    "atsumeru": {
+        "series": "Series",
+        "archives": "Archívy",
+        "chapters": "Kapitoly",
+        "categories": "Kategórie"
+    },
+    "komga": {
+        "libraries": "Knižnice",
+        "series": "Series",
+        "books": "Books"
+    },
+    "diskstation": {
+        "days": "Days",
+        "uptime": "Dostupnosť",
+        "volumeAvailable": "Dostupné"
+    },
+    "dispatcharr": {
+        "channels": "Channels",
+        "streams": "Streams"
+    },
+    "mylar": {
+        "series": "Series",
+        "issues": "Problémy",
+        "wanted": "Wanted"
+    },
+    "photoprism": {
+        "albums": "Albumov",
+        "photos": "Fotografií",
+        "videos": "Videí",
+        "people": "Ľudia"
+    },
+    "fileflows": {
+        "queue": "Poradie",
+        "processing": "Processing",
+        "processed": "Spracované",
+        "time": "Čas",
+        "failed": "Failed"
+    },
+    "firefly": {
+        "networth": "Net Worth",
+        "budget": "Budget"
+    },
+    "grafana": {
+        "dashboards": "Panely",
+        "datasources": "Zdroje dát",
+        "totalalerts": "Upozornení spolu",
+        "alertstriggered": "Spustené upozornenia"
+    },
+    "nextcloud": {
+        "cpuload": "Využitie CPU",
+        "memoryusage": "Využitie pamäte",
+        "freespace": "Dostupné miesto",
+        "activeusers": "Aktívni používatelia",
+        "numfiles": "Súborov",
+        "numshares": "Zdieľané položky"
+    },
+    "kopia": {
+        "status": "Stav",
+        "size": "Veľkosť",
+        "lastrun": "Naposledy spustené",
+        "nextrun": "Nasledujúce spustenie",
+        "failed": "Failed"
+    },
+    "unmanic": {
+        "active_workers": "Aktívne Worker-y",
+        "total_workers": "Spolu Worker-ov",
+        "records_total": "Dĺžka fronty"
+    },
+    "pterodactyl": {
+        "servers": "Servery",
+        "nodes": "Uzly"
+    },
+    "prometheus": {
+        "targets_up": "Dostupné ciele",
+        "targets_down": "Nedostupné ciele",
+        "targets_total": "Cieľov spolu"
+    },
+    "gatus": {
+        "up": "Dostupné stránky",
+        "down": "Nedostupné stránky",
+        "uptime": "Dostupnosť"
+    },
+    "ghostfolio": {
+        "gross_percent_today": "Dnes",
+        "gross_percent_1y": "Jeden rok",
+        "gross_percent_max": "Za celý čas",
+        "net_worth": "Net Worth"
+    },
+    "audiobookshelf": {
+        "podcasts": "Podcasty",
+        "books": "Books",
+        "podcastsDuration": "Dĺžka",
+        "booksDuration": "Duration"
+    },
+    "homeassistant": {
+        "people_home": "Ľudia doma",
+        "lights_on": "Zapnúť svetlá",
+        "switches_on": "Zapnúť prepínače"
+    },
+    "whatsupdocker": {
+        "monitoring": "Monitoring",
+        "updates": "Aktualizácie"
+    },
+    "calibreweb": {
+        "books": "Books",
+        "authors": "Autori",
+        "categories": "Kategórie",
+        "series": "Series"
+    },
+    "booklore": {
+        "libraries": "Libraries",
+        "books": "Books",
+        "reading": "Reading",
+        "finished": "Finished"
+    },
+    "bookorbit": {
+        "books": "Books",
+        "authors": "Authors",
+        "series": "Series",
+        "storage": "Úložisko",
+        "reading": "Reading",
+        "finished": "Finished"
+    },
+    "jdownloader": {
+        "downloadCount": "Poradie",
+        "downloadBytesRemaining": "Zostávajúce",
+        "downloadTotalBytes": "Veľkosť",
+        "downloadSpeed": "Rýchlosť"
+    },
+    "kavita": {
+        "seriesCount": "Series",
+        "totalFiles": "Súborov"
+    },
+    "azuredevops": {
+        "result": "Výsledok",
+        "status": "Stav",
+        "buildId": "ID zostavy",
+        "succeeded": "Úspešný",
+        "notStarted": "Nespustený",
+        "failed": "Failed",
+        "canceled": "Zrušený",
+        "inProgress": "Prebieha",
+        "totalPrs": "Počet PR-ok",
+        "myPrs": "Moje PR-ka",
+        "approved": "Schválené"
+    },
+    "gamedig": {
+        "status": "Stav",
+        "online": "Online",
+        "offline": "Offline",
+        "name": "Meno",
+        "map": "Mapa",
+        "currentPlayers": "Počet hráčov",
+        "players": "Players",
+        "maxPlayers": "Maximálny počet hráčov",
+        "bots": "Boti",
+        "ping": "Odozva"
+    },
+    "urbackup": {
+        "ok": "Ok",
+        "errored": "Chyby",
+        "noRecent": "Neaktuálny",
+        "totalUsed": "Použité úložisko"
+    },
+    "mealie": {
+        "recipes": "Recepty",
+        "users": "Používateľov",
+        "categories": "Kategórie",
+        "tags": "Štítky"
+    },
+    "openmediavault": {
+        "downloading": "Sťahovanie",
+        "total": "Celkom",
+        "running": "Beží",
+        "stopped": "Stopped",
+        "passed": "Passed",
+        "failed": "Failed"
+    },
+    "openwrt": {
+        "uptime": "Dostupnosť",
+        "cpuLoad": "Záťaž CPU priem. (5m)",
+        "up": "Beží",
+        "down": "Nedostupné",
+        "bytesTx": "Prenesených",
+        "bytesRx": "Prijaté"
+    },
+    "uptimerobot": {
+        "status": "Stav",
+        "uptime": "Dostupnosť",
+        "lastDown": "Posledný čas nedostupnosti",
+        "downDuration": "Trvanie nedostupnosti",
+        "sitesUp": "Dostupné stránky",
+        "sitesDown": "Nedostupné stránky",
+        "paused": "Pozastavené",
+        "notyetchecked": "Neskontrolované",
+        "up": "Beží",
+        "seemsdown": "Javí sa nedostupný",
+        "down": "Nedostupné",
+        "unknown": "Neznáme"
+    },
+    "calendar": {
+        "inCinemas": "V kinách",
+        "physicalRelease": "Fyzické vydanie",
+        "digitalRelease": "Digitálne vydanie",
+        "noEventsToday": "Žiadne udalosti na dnešný deň!",
+        "noEventsFound": "Žiadne udalosti",
+        "errorWhenLoadingData": "Error when loading calendar data"
+    },
+    "romm": {
+        "platforms": "Platformy",
+        "totalRoms": "Games",
+        "saves": "Saves",
+        "states": "States",
+        "screenshots": "Screenshots",
+        "totalfilesize": "Celková veľkosť"
+    },
+    "mailcow": {
+        "domains": "Domains",
+        "mailboxes": "Mailboxes",
+        "mails": "Mails",
+        "storage": "Úložisko"
+    },
+    "maintainerr": {
+        "itemsHandled": "Items Handled",
+        "episodesHandled": "Episodes Handled",
+        "moviesHandled": "Movies Handled",
+        "showsHandled": "Shows Handled",
+        "seasonsHandled": "Seasons Handled",
+        "reclaimable": "Reclaimable",
+        "movieReclaimable": "Movie Reclaimable",
+        "showReclaimable": "Show Reclaimable",
+        "totalCapacity": "Celková kapacita"
+    },
+    "netdata": {
+        "warnings": "Upozornenia",
+        "criticals": "Kritické"
+    },
+    "ntfy": {
+        "title": "Názov",
+        "priority": "Priorita",
+        "lastReceived": "Posledná prijatá",
+        "message": "Správa",
+        "tags": "Štítky",
+        "none": "Žiadna",
+        "min": "Min",
+        "low": "Nízka",
+        "default": "Predvolená",
+        "high": "Vysoká",
+        "urgent": "Naliehavé"
+    },
+    "plantit": {
+        "events": "Udalosti",
+        "plants": "Rastliny",
+        "photos": "Fotografií",
+        "species": "Druhy"
+    },
+    "gitea": {
+        "notifications": "Oznámenia",
+        "issues": "Issues",
+        "pulls": "Pull requesty",
+        "repositories": "Repositories"
+    },
+    "stash": {
+        "scenes": "Scény",
+        "scenesPlayed": "Prehrané scény",
+        "playCount": "Celkovo prehraní",
+        "playDuration": "Pozeraný čas",
+        "sceneSize": "Veľkosť obrazovky",
+        "sceneDuration": "Dĺžka scény",
+        "images": "Obrázky",
+        "imageSize": "Veľkosť obrázkov",
+        "galleries": "Galérie",
+        "performers": "Herci",
+        "studios": "Štúdiá",
+        "movies": "Filmov",
+        "tags": "Štítky",
+        "oCount": "O Count"
+    },
+    "tandoor": {
+        "users": "Používateľov",
+        "recipes": "Recepty",
+        "keywords": "Kľúčové slová"
+    },
+    "homebox": {
+        "items": "Položky",
+        "totalWithWarranty": "So zárukou",
+        "locations": "Umiestnenia",
+        "labels": "Štítky",
+        "users": "Používateľov",
+        "totalValue": "Celková hodnota"
+    },
+    "crowdsec": {
+        "alerts": "Upozornenia",
+        "bans": "Bany"
+    },
+    "wgeasy": {
+        "connected": "Pripojené",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "total": "Celkom"
+    },
+    "swagdashboard": {
+        "proxied": "Proxied",
+        "auth": "With Auth",
+        "outdated": "Zastarané",
+        "banned": "Zabanovaný"
+    },
+    "myspeed": {
+        "ping": "Odozva",
+        "download": "Download",
+        "upload": "Nahrávanie"
+    },
+    "stocks": {
+        "stocks": "Stocks",
+        "loading": "Načítava sa",
+        "open": "Open - US Market",
+        "closed": "Closed - US Market",
+        "invalidConfiguration": "Neplatná konfigurácia"
+    },
+    "frigate": {
+        "cameras": "Kamery",
+        "uptime": "Dostupnosť",
+        "version": "Verzia"
+    },
+    "linkwarden": {
+        "links": "Odkazy",
+        "collections": "Collections",
+        "tags": "Štítky"
+    },
+    "zabbix": {
+        "unclassified": "Not classified",
+        "information": "Informácie",
+        "warning": "Warning",
+        "average": "Average",
+        "high": "High",
+        "disaster": "Disaster"
+    },
+    "lubelogger": {
+        "vehicle": "Vozidlo",
+        "vehicles": "Vozidlá",
+        "serviceRecords": "Service Records",
+        "reminders": "Reminders",
+        "nextReminder": "Next Reminder",
+        "none": "Žiadne"
+    },
+    "vikunja": {
+        "projects": "Aktívne projekty",
+        "tasks7d": "Tasks Due This Week",
+        "tasksOverdue": "Overdue Tasks",
+        "tasksInProgress": "Tasks In Progress"
+    },
+    "headscale": {
+        "name": "Name",
+        "address": "Adresa",
+        "last_seen": "Last Seen",
+        "status": "Stav",
+        "online": "Online",
+        "offline": "Nedostupné"
+    },
+    "beszel": {
+        "name": "Name",
+        "systems": "Systems",
+        "up": "Beží",
+        "down": "Nedostupné",
+        "paused": "Pozastavené",
+        "pending": "Čakajúce",
+        "status": "Stav",
+        "updated": "Aktualizované",
+        "cpu": "CPU",
+        "memory": "RAM",
+        "disk": "Disk",
+        "network": "NET"
+    },
+    "argocd": {
+        "apps": "Apps",
+        "synced": "Synced",
+        "outOfSync": "Out Of Sync",
+        "healthy": "Zdravý",
+        "degraded": "Degraded",
+        "progressing": "Progressing",
+        "missing": "Missing",
+        "suspended": "Suspended"
+    },
+    "spoolman": {
+        "loading": "Načítava sa"
+    },
+    "gitlab": {
+        "groups": "Skupiny",
+        "issues": "Problémy",
+        "merges": "Merge Requests",
+        "projects": "Projekty"
+    },
+    "apcups": {
+        "status": "Stav",
+        "load": "Záťaž",
+        "bcharge": "Battery Charge",
+        "timeleft": "Time Left"
+    },
+    "karakeep": {
+        "bookmarks": "Bookmarks",
+        "favorites": "Obľúbené",
+        "archived": "Archived",
+        "highlights": "Highlights",
+        "lists": "Zoznamy",
+        "tags": "Štítky"
+    },
+    "slskd": {
+        "slskStatus": "Network",
+        "connected": "Pripojené",
+        "disconnected": "Odpojené",
+        "updateStatus": "Update",
+        "update_yes": "Dostupné",
+        "update_no": "Aktuálne",
+        "downloads": "Downloads",
+        "uploads": "Uploads",
+        "sharedFiles": "Files"
+    },
+    "jellystat": {
+        "songs": "Skladieb",
+        "movies": "Filmov",
+        "episodes": "Epizód",
+        "other": "Ostatné"
+    },
+    "checkmk": {
+        "serviceErrors": "Service issues",
+        "hostErrors": "Host issues"
+    },
+    "komodo": {
+        "total": "Celkom",
+        "running": "Beží",
+        "stopped": "Zastavené",
+        "down": "Nedostupné",
+        "unhealthy": "Nezdravý",
+        "unknown": "Neznáme",
+        "servers": "Servery",
+        "stacks": "Stacks",
+        "containers": "Kontajnery"
+    },
+    "filebrowser": {
+        "available": "Dostupné",
+        "used": "Využité",
+        "total": "Celkom"
+    },
+    "wallos": {
+        "activeSubscriptions": "Subscriptions",
+        "thisMonthlyCost": "Tento mesiac",
+        "nextMonthlyCost": "Ďalší mesiac",
+        "previousMonthlyCost": "Prev. Month",
+        "nextRenewingSubscription": "Next Payment"
+    },
+    "unraid": {
+        "STARTED": "Started",
+        "STOPPED": "Stopped",
+        "NEW_ARRAY": "New Array",
+        "RECON_DISK": "Reconstructing Disk",
+        "DISABLE_DISK": "Disk Disabled",
+        "SWAP_DSBL": "Swap Disable",
+        "INVALID_EXPANSION": "Invalid Expansion",
+        "PARITY_NOT_BIGGEST": "Parity Not Biggest",
+        "TOO_MANY_MISSING_DISKS": "Too Many Missing Disks",
+        "NEW_DISK_TOO_SMALL": "New Disk Too Small",
+        "NO_DATA_DISKS": "No Data Disks",
+        "notifications": "Oznámenia",
+        "status": "Stav",
+        "cpu": "CPU",
+        "memoryUsed": "Memory Used",
+        "memoryAvailable": "Memory Available",
+        "arrayUsed": "Array Used",
+        "arrayFree": "Array Free",
+        "poolUsed": "{{pool}} Used",
+        "poolFree": "{{pool}} Free"
+    },
+    "backrest": {
+        "num_plans": "Plans",
+        "num_success_30": "Successes",
+        "num_failure_30": "Failures",
+        "num_success_latest": "Succeeding",
+        "num_failure_latest": "Failing",
+        "bytes_added_30": "Bytes Added"
+    },
+    "yourspotify": {
+        "songs": "Songs",
+        "time": "Time",
+        "artists": "Artists"
+    },
+    "arcane": {
+        "containers": "Containers",
+        "images": "Images",
+        "image_updates": "Image Updates",
+        "images_unused": "Unused",
+        "environment_required": "Environment ID Required"
+    },
+    "dockhand": {
+        "running": "Running",
+        "stopped": "Stopped",
+        "cpu": "CPU",
+        "memory": "Memory",
+        "images": "Images",
+        "volumes": "Volumes",
+        "events_today": "Events Today",
+        "pending_updates": "Pending Updates",
+        "stacks": "Stacks",
+        "paused": "Paused",
+        "total": "Total",
+        "environment_not_found": "Environment Not Found"
+    },
+    "sparkyfitness": {
+        "eaten": "Eaten",
+        "burned": "Burned",
+        "remaining": "Remaining",
+        "steps": "Steps"
+    },
+    "syncthing": {
+        "connected": "Pripojené",
+        "synced": "Synchronizované",
+        "errors": "Chyby",
+        "storage": "Úložisko"
+    },
+    "sportarr": {
+        "wanted": "Wanted",
+        "queued": "V poradí",
+        "leagues": "Leagues"
+    },
+    "feed": {
+        "noItems": "Žiadne položky"
+    }
+}

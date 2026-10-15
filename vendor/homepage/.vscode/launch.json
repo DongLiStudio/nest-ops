@@ -1,0 +1,32 @@
+{
+  "configurations": [
+    {
+      "name": "Debug homepage",
+      "type": "node",
+      "preLaunchTask": "pnpm install",
+      "request": "launch",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["run", "dev"],
+      "env": {
+        "LOG_LEVEL": "debug"
+      },
+      "skipFiles": ["<node_internals>/**"],
+      "console": "integratedTerminal",
+      "serverReadyAction":{
+        "pattern": ".*http://localhost:3000.*",
+        "action": "startDebugging",
+        "name": "Launch Chromium",
+        "killOnServerStop": true,
+      }
+    },
+    {
+      "name": "Launch Chromium",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "urlFilter": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}",
+      "trace": true
+    }
+  ]
+}

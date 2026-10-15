@@ -1,0 +1,63 @@
+import { useTranslation } from "next-i18next/pages";
+
+import Block from "components/services/widget/block";
+import Container from "components/services/widget/container";
+import useWidgetAPI from "utils/proxy/use-widget-api";
+
+function getPerformancePercent(t, performanceRange) {
+  // ghostfolio v2.79.0 changed to grossPerformancePercentage
+  // ghostfolio v2.106.0 changed to netPerformancePercentageWithCurrencyEffect
+  const percent =
+    performanceRange.performance.netPerformancePercentageWithCurrencyEffect ??
+    performanceRange.performance.grossPerformancePercentage ??
+    performanceRange.performance.currentGrossPerformancePercent;
+  return `${percent > 0 ? "+" : ""}${t("common.percent", {
+    value: percent * 100,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+export default function Component({ service }) {
+  const { t } = useTranslation();
+  const { widget } = service;
+  const includeNetWorth = widget.fields?.includes("net_worth");
+
+  const { data: performanceToday, error: ghostfolioErrorToday } = useWidgetAPI(widget, "today");
+  const { data: performanceYear, error: ghostfolioErrorYear } = useWidgetAPI(widget, "year");
+  const { data: performanceMax, error: ghostfolioErrorMax } = useWidgetAPI(widget, "max");
+  const { data: userInfo, error: ghostfolioErrorUserInfo } = useWidgetAPI(widget, includeNetWorth ? "userInfo" : "");
+
+  if (ghostfolioErrorToday || ghostfolioErrorYear || ghostfolioErrorMax || ghostfolioErrorUserInfo) {
+    const finalError = ghostfolioErrorToday ?? ghostfolioErrorYear ?? ghostfolioErrorMax ?? ghostfolioErrorUserInfo;
+    return <Container service={service} error={finalError} />;
+  }
+
+  if (performanceToday?.statusCode === 401) {
+    return <Container service={service} error={performanceToday} />;
+  }
+
+  if (!performanceToday || !performanceYear || !performanceMax || (includeNetWorth && !userInfo)) {
+    return (
+      <Container service={service}>
+        <Block label="ghostfolio.gross_percent_today" />
+        <Block label="ghostfolio.gross_percent_1y" />
+        <Block label="ghostfolio.gross_percent_max" />
+        {includeNetWorth && <Block label="ghostfolio.net_worth" />}
+      </Container>
+    );
+  }
+
+  return (
+    <Container service={service}>
+      <Block label="ghostfolio.gross_percent_today" value={getPerformancePercent(t, performanceToday)} />
+      <Block label="ghostfolio.gross_percent_1y" value={getPerformancePercent(t, performanceYear)} />
+      <Block label="ghostfolio.gross_percent_max" value={getPerformancePercent(t, performanceMax)} />
+      {includeNetWorth && (
+        <Block
+          label="ghostfolio.net_worth"
+          value={`${performanceToday.performance.currentNetWorth.toFixed(2)} ${userInfo?.settings?.baseCurrency ?? userInfo?.settings?.currency ?? ""}`}
+        />
+      )}
+    </Container>
+  );
+}

@@ -1,0 +1,8 @@
+{
+  "enabled": false,
+  "address": "smtp://smtp.example.com:587",
+  "username": "user@example.com",
+  "password": "REPLACE_WITH_SMTP_PASSWORD",
+  "sender": "NestOps <user@example.com>",
+  "recipient": "operator@example.com"
+}

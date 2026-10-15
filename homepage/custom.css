@@ -1,0 +1,43 @@
+@import url('/_ops/ui.css');
+/* Homepage header optical styling. No legacy service-card or hidden-layout rules. */
+:root { --home-ink:#f5faff; --home-muted:#d4e5f0; --home-accent:#bceaff; --glass-fill:rgba(11,31,45,.22); --glass-rim:rgba(231,250,255,.35); }
+body { color:var(--home-ink); font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif; -webkit-font-smoothing:antialiased; }
+html { scrollbar-color:#8faec2 #172d3b; scrollbar-width:thin; }
+::selection { background:#286080; color:white; }
+a { text-underline-offset:.2em; }
+input { caret-color:var(--home-accent); }
+a:focus-visible,button:focus-visible,input:focus-visible { outline:2px solid var(--home-accent); outline-offset:4px; }
+/* Keep optical edges independent of mask-composite support. */
+#information-widgets-right > * {
+ position:relative; isolation:isolate; border:1px solid var(--glass-rim) !important;
+ background:linear-gradient(155deg,rgba(226,250,255,.065),transparent 30%,rgba(160,219,247,.025)),var(--glass-fill) !important;
+ -webkit-backdrop-filter:blur(9px) saturate(130%); backdrop-filter:blur(9px) saturate(130%);
+ box-shadow:0 8px 24px rgba(1,12,22,.16),inset 0 1px 1px rgba(255,255,255,.35),inset 0 -1px 1px rgba(184,228,250,.12);
+ border-radius:22px !important;
+}
+#information-widgets { padding:0 !important; margin:38px 36px 26px !important; background:none !important; border:0 !important; box-shadow:none !important; -webkit-backdrop-filter:none; backdrop-filter:none; }
+#widgets-wrap { display:grid !important; grid-template-columns:minmax(240px,1fr) minmax(360px,1.15fr); gap:24px; align-items:center; }
+.information-widget-greeting { min-width:0; }
+.information-widget-greeting span { font-size:30px !important; font-weight:600; letter-spacing:-.03em; text-shadow:0 2px 12px rgba(0,10,20,.5); }
+#information-widgets-right { display:grid !important; grid-template-columns:1fr auto; gap:12px; margin:0 !important; min-width:0; }
+#information-widgets-right > * { padding:12px 18px; min-width:0; }
+.information-widget-datetime { grid-column:1; border-radius:16px !important; }
+.information-widget-datetime span { font-size:14px !important; font-variant-numeric:tabular-nums; color:var(--home-muted) !important; }
+.information-widget-datetime > div { justify-content:flex-start !important; }
+.information-widget-search { overflow:hidden; grid-column:1 / -1; grid-row:2; padding:0 !important; min-height:46px; }
+.information-widget-search > div { margin:0 !important; height:46px !important; }
+.information-widget-search input { border:0 !important; height:46px !important; padding-left:18px; background:transparent !important; color:var(--home-ink); font-size:13px !important; border-radius:inherit; }
+.information-widget-search input::placeholder { color:var(--home-muted); opacity:1; }
+.information-widget-search button { border-radius:0 22px 22px 0 !important; height:46px !important; width:54px; top:0 !important; right:0 !important; bottom:0 !important; display:flex; align-items:center; justify-content:center; padding:0 !important; }
+#information-widgets-right > :not(.information-widget-datetime):not(.information-widget-search) { grid-column:2; grid-row:1; border-radius:16px !important; }
+
+/* Official Homepage owns the header and footer; NestOps owns only its section. */
+.container:has(#information-widgets) { max-width:1180px !important; }
+.information-widget-search > div > .relative { position:static !important; }
+@media(max-width:850px) { #widgets-wrap { grid-template-columns:1fr !important; gap:18px; } .information-widget-greeting span { font-size:28px !important; } }
+@media(max-width:540px) { #information-widgets { margin:28px 20px 22px !important; } #information-widgets-right > * { padding:11px 13px; } .information-widget-datetime span { font-size:12px !important; } }
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more) { #information-widgets-right > * { background:#142b3b !important; -webkit-backdrop-filter:none; backdrop-filter:none; } }
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) { #information-widgets-right > * { background:#142b3b !important; } }
+.home-launcher-downloads { max-width:1180px;margin:28px auto 48px;padding:0 20px;display:flex;justify-content:center;gap:20px;flex-wrap:wrap;font-size:12px;color:#c6dbe8; }
+.home-launcher-downloads:empty { display:none; }
+.home-launcher-downloads a { color:#e5f5ff;text-decoration:underline;text-underline-offset:4px; }

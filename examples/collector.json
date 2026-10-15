@@ -1,0 +1,31 @@
+{
+  "endpoint": "https://dashboard.example.com/_ops/ingest",
+  "server": "demo-host",
+  "token": "REPLACE_WITH_PER_HOST_TOKEN",
+  "services": [
+    {
+      "id": "demo-host:web",
+      "server": "demo-host",
+      "name": "示例网站",
+      "category": "网站与内容",
+      "app": true,
+      "href": "https://www.example.com/",
+      "containers": [
+        "example-web"
+      ],
+      "units": []
+    },
+    {
+      "id": "demo-host:database",
+      "server": "demo-host",
+      "name": "数据库",
+      "category": "开发与运维",
+      "app": false,
+      "href": null,
+      "containers": [
+        "example-db"
+      ],
+      "units": []
+    }
+  ]
+}

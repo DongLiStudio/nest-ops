@@ -1,0 +1,93 @@
+import { useTranslation } from "next-i18next/pages";
+import { useEffect, useState } from "react";
+
+import Block from "components/services/widget/block";
+import Container from "components/services/widget/container";
+import { formatProxyUrl } from "utils/proxy/api-helpers";
+
+export default function Component({ service }) {
+  const { widget } = service;
+  const { t } = useTranslation();
+
+  const [uptimerobotData, setUptimerobotData] = useState(null);
+
+  useEffect(() => {
+    async function fetchData() {
+      const url = formatProxyUrl(widget, "getmonitors");
+      const res = await fetch(url, { method: "POST" });
+      setUptimerobotData(await res.json());
+    }
+    if (!uptimerobotData) {
+      fetchData();
+    }
+  }, [widget, uptimerobotData]);
+
+  if (!uptimerobotData) {
+    return (
+      <Container service={service}>
+        <Block label="uptimerobot.status" />
+        <Block label="uptimerobot.uptime" />
+      </Container>
+    );
+  }
+
+  if (uptimerobotData.error) {
+    return <Container service={service} error={uptimerobotData.error} />;
+  }
+
+  // multiple monitors
+  if (uptimerobotData.pagination?.total > 1) {
+    const sitesUp = uptimerobotData.monitors.filter((m) => m.status === 2).length;
+
+    return (
+      <Container service={service}>
+        <Block label="uptimerobot.sitesUp" value={sitesUp} />
+        <Block label="uptimerobot.sitesDown" value={uptimerobotData.pagination.total - sitesUp} />
+      </Container>
+    );
+  }
+
+  // single monitor
+  const monitor = uptimerobotData.monitors[0];
+  const logs = Array.isArray(monitor.logs) ? monitor.logs : [];
+  const lastUpLog = logs.find((log) => log.type === 2);
+  const lastDownLog = logs.find((log) => log.type === 1);
+
+  let status;
+  let uptime = 0;
+
+  switch (monitor.status) {
+    case 0:
+      status = t("uptimerobot.paused");
+      break;
+    case 1:
+      status = t("uptimerobot.notyetchecked");
+      break;
+    case 2:
+      status = t("uptimerobot.up");
+      uptime = t("common.duration", { value: lastUpLog?.duration ?? 0 });
+      break;
+    case 8:
+      status = t("uptimerobot.seemsdown");
+      break;
+    case 9:
+      status = t("uptimerobot.down");
+      break;
+    default:
+      status = t("uptimerobot.unknown");
+      break;
+  }
+
+  const lastDown = lastDownLog ? new Date(lastDownLog.datetime * 1000).toLocaleString() : "";
+  const downDuration = t("common.duration", { value: lastDownLog?.duration ?? 0 });
+  const hideDown = !lastDownLog;
+
+  return (
+    <Container service={service}>
+      <Block label="uptimerobot.status" value={status} />
+      <Block label="uptimerobot.uptime" value={uptime} />
+      {!hideDown && <Block label="uptimerobot.lastDown" value={lastDown} />}
+      {!hideDown && <Block label="uptimerobot.downDuration" value={downDuration} />}
+    </Container>
+  );
+}

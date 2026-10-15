@@ -1,0 +1,31 @@
+---
+title: Authentik
+description: Authentik Widget Configuration
+---
+
+Learn more about [Authentik](https://github.com/goauthentik/authentik).
+
+This widget reads the number of active users in the system, as well as logins for the last 24 hours, and authorizations when using widget version 2.
+
+You will need to generate an API token for an existing user under `Admin Portal` > `Directory` > `Tokens & App passwords`.
+Make sure to set Intent to "API Token".
+
+The account you made the API token for also needs the following **Assigned global permissions** in Authentik:
+
+- authentik Core -> Can view User (Model: User)
+- authentik Events -> Can view Event (Model: Event)
+
+Allowed fields: `["users", "loginsLast24H", "failedLoginsLast24H", "authorizationsLast24H"]` (`authorizationsLast24H` works with v2 only).
+
+| Authentik Version | Homepage Widget Version |
+| ----------------- | ----------------------- |
+| < 2025.8.0        | 1 (default)             |
+| >= 2025.8.0       | 2                       |
+
+```yaml
+widget:
+  type: authentik
+  url: http://authentik.host.or.ip:port
+  key: api_token
+  version: 2 # optional, default is 1
+```

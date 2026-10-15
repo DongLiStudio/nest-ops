@@ -1,0 +1,22 @@
+name: Validate
+on: [push, pull_request]
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python scripts/verify.py
+      - run: python console/tests.py
+      - run: python scripts/test_collectors.py
+      - run: node --check console/ui.js && node --check homepage/custom.js
+      - run: |
+          cp .env.example .env
+          python scripts/init.py
+          python scripts/prepare.py
+          docker compose config --quiet

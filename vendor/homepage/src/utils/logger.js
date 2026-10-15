@@ -1,0 +1,112 @@
+import { format as utilFormat } from "node:util";
+
+import winston from "winston";
+
+import checkAndCopyConfig, { CONF_DIR, getSettings } from "utils/config/config";
+
+let winstonLogger;
+
+function combineMessageAndSplat() {
+  return {
+    transform: (info, opts) => {
+      // combine message and args if any
+
+      info.message = utilFormat(info.message, ...(info[Symbol.for("splat")] || []));
+      return info;
+    },
+  };
+}
+
+function messageFormatter(logInfo) {
+  const label = logInfo.label ? `<${logInfo.label}> ` : "";
+  // e.g. fetch errors say nothing useful without the cause
+  const cause = logInfo.cause ? `\ncaused by: ${logInfo.cause.stack ?? logInfo.cause}` : "";
+  return `[${logInfo.timestamp}] ${logInfo.level}: ${label}${logInfo.stack || logInfo.message}${cause}`;
+}
+
+function getConsoleLogger() {
+  return new winston.transports.Console({
+    format: winston.format.combine(
+      winston.format.errors({ stack: true, cause: true }),
+      combineMessageAndSplat(),
+      winston.format.timestamp(),
+      winston.format.colorize(),
+      winston.format.printf(messageFormatter),
+    ),
+    handleExceptions: true,
+    handleRejections: true,
+  });
+}
+
+function getFileLogger() {
+  const settings = getSettings();
+  const logpath = settings.logpath || CONF_DIR;
+
+  return new winston.transports.File({
+    format: winston.format.combine(
+      winston.format.errors({ stack: true, cause: true }),
+      combineMessageAndSplat(),
+      winston.format.timestamp(),
+      winston.format.printf(messageFormatter),
+    ),
+    filename: `${logpath}/logs/homepage.log`,
+    maxsize: 10 * 1024 * 1024,
+    maxFiles: 5,
+    tailable: true,
+    handleExceptions: true,
+    handleRejections: true,
+  });
+}
+
+function init() {
+  checkAndCopyConfig("settings.yaml");
+  const configuredTargets = process.env.LOG_TARGETS || "both";
+  const loggingTransports = [];
+
+  switch (configuredTargets) {
+    case "both":
+      loggingTransports.push(getConsoleLogger(), getFileLogger());
+      break;
+    case "stdout":
+      loggingTransports.push(getConsoleLogger());
+      break;
+    case "file":
+      loggingTransports.push(getFileLogger());
+      break;
+    default:
+      loggingTransports.push(getConsoleLogger(), getFileLogger());
+  }
+
+  winstonLogger = winston.createLogger({
+    level: process.env.LOG_LEVEL || "info",
+    transports: loggingTransports,
+  });
+
+  // patch the console log mechanism to use our logger
+  const consoleMethods = ["log", "debug", "info", "warn", "error"];
+  consoleMethods.forEach((method) => {
+    // workaround for https://github.com/winstonjs/winston/issues/1591
+    switch (method) {
+      case "log":
+        console[method] = winstonLogger.info.bind(winstonLogger);
+        break;
+      default:
+        console[method] = winstonLogger[method].bind(winstonLogger);
+        break;
+    }
+  });
+}
+
+const loggers = {};
+
+export default function createLogger(label) {
+  if (!winstonLogger) {
+    init();
+  }
+
+  if (!loggers[label]) {
+    loggers[label] = winstonLogger.child({ label });
+  }
+
+  return loggers[label];
+}

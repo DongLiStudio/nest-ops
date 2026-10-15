@@ -1,0 +1,125 @@
+import { useTranslation } from "next-i18next/pages";
+import dynamic from "next/dynamic";
+import { useCallback } from "react";
+
+import Block from "../components/block";
+import Container from "../components/container";
+
+import useDataPoints from "./use-data-points";
+
+import { parseVersionForUrl } from "utils/proxy/api-helpers";
+import useWidgetAPI from "utils/proxy/use-widget-api";
+
+const ChartDual = dynamic(() => import("../components/chart_dual"), { ssr: false });
+
+const defaultPointsLimit = 15;
+const defaultInterval = (isChart) => (isChart ? 1000 : 5000);
+
+export default function Component({ service }) {
+  const { t } = useTranslation();
+  const { widget } = service;
+  const { chart } = widget;
+  const { refreshInterval = defaultInterval(chart), pointsLimit = defaultPointsLimit, version = 3 } = widget;
+  const apiVersion = parseVersionForUrl(version, 3);
+
+  const [dataPoints, addDataPoint] = useDataPoints(pointsLimit, { a: 0, b: 0 });
+
+  const handleData = useCallback(
+    (newData) => {
+      if (newData) addDataPoint({ a: newData.used, b: newData.available });
+    },
+    [addDataPoint],
+  );
+
+  const { data, error } = useWidgetAPI(
+    service.widget,
+    `${apiVersion}/mem`,
+    {
+      refreshInterval: Math.max(defaultInterval(chart), refreshInterval),
+    },
+    { onSuccess: handleData },
+  );
+
+  if (error) {
+    return <Container error={error} widget={widget} />;
+  }
+
+  if (!data) {
+    return (
+      <Container chart={chart}>
+        <Block position="bottom-3 left-3">-</Block>
+      </Container>
+    );
+  }
+
+  return (
+    <Container chart={chart}>
+      {chart && (
+        <ChartDual
+          dataPoints={dataPoints}
+          max={data.total}
+          label={[t("resources.used"), t("resources.free")]}
+          formatter={(value) =>
+            t("common.bytes", {
+              value,
+              maximumFractionDigits: 0,
+              binary: true,
+            })
+          }
+        />
+      )}
+
+      {data && !error && (
+        <Block position="bottom-3 left-3">
+          {data.available && chart && (
+            <div className="text-xs opacity-50">
+              {t("common.bytes", {
+                value: data.available,
+                maximumFractionDigits: 1,
+                binary: true,
+              })}{" "}
+              {t("resources.free")}
+            </div>
+          )}
+
+          {data.total && (
+            <div className="text-xs opacity-50">
+              {t("common.bytes", {
+                value: data.total,
+                maximumFractionDigits: 1,
+                binary: true,
+              })}{" "}
+              {t("resources.total")}
+            </div>
+          )}
+        </Block>
+      )}
+
+      {!chart && (
+        <Block position="top-3 right-3">
+          {data.available && (
+            <div className="text-xs opacity-50">
+              {t("common.bytes", {
+                value: data.available,
+                maximumFractionDigits: 1,
+                binary: true,
+              })}{" "}
+              {t("resources.free")}
+            </div>
+          )}
+        </Block>
+      )}
+
+      <Block position="bottom-3 right-3">
+        <div className="text-xs font-bold opacity-75">
+          {t("common.bytes", {
+            value: data.used,
+            maximumFractionDigits: 1,
+            binary: true,
+          })}{" "}
+          {t("resources.used")}
+        </div>
+      </Block>
+    </Container>
+  );
+}

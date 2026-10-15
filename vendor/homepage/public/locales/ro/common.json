@@ -1,0 +1,1284 @@
+{
+    "common": {
+        "bytes": "{{value, bytes}}",
+        "bits": "{{value, bytes(bits: true)}}",
+        "bbytes": "{{value, bytes(binary: true)}}",
+        "bbits": "{{value, bytes(bits: true; binary: true)}}",
+        "byterate": "{{value, rate(bits: false)}}",
+        "bibyterate": "{{value, rate(bits: false; binary: true)}}",
+        "bitrate": "{{value, rate(bits: true)}}",
+        "bibitrate": "{{value, rate(bits: true; binary: true)}}",
+        "percent": "{{value, percent}}",
+        "number": "{{value, number}}",
+        "ms": "{{value, number}}",
+        "date": "{{value, date}}",
+        "relativeDate": "{{value, relativeDate}}",
+        "duration": "{{value, duration}}",
+        "months": "mo",
+        "days": "d",
+        "hours": "h",
+        "minutes": "m",
+        "seconds": "s"
+    },
+    "auth": {
+        "signout": "Sign out"
+    },
+    "widget": {
+        "missing_type": "Lipsește Tipul de Widget: {{type}}",
+        "api_error": "Eroare API",
+        "information": "Informație",
+        "status": "Stare",
+        "url": "URL",
+        "raw_error": "Eroare Raw",
+        "response_data": "Date de raspuns"
+    },
+    "weather": {
+        "current": "Locația Curentă",
+        "allow": "Click pentru a permite",
+        "updating": "Se actualizează",
+        "wait": "Va rugăm așteptați"
+    },
+    "search": {
+        "placeholder": "Caută…",
+        "provider": "Search engine: {{name}}",
+        "select_provider": "Select search engine"
+    },
+    "resources": {
+        "cpu": "Procesor",
+        "mem": "MEM",
+        "total": "Total",
+        "free": "Disponibili",
+        "used": "Utilizați",
+        "load": "Sarcină",
+        "temp": "TEMP",
+        "max": "Maxim",
+        "uptime": "UP"
+    },
+    "unifi": {
+        "users": "Utilizatori",
+        "uptime": "Uptime",
+        "days": "Zile",
+        "wan": "WAN",
+        "lan": "LAN",
+        "wlan": "WLAN",
+        "devices": "Dispozitive",
+        "lan_devices": "Dispozitive LAN",
+        "wlan_devices": "Dispozitive WLAN",
+        "lan_users": "Utilizatori LAN",
+        "wlan_users": "Utilizatori WLAN",
+        "up": "UP",
+        "down": "Oprit",
+        "wait": "Please wait",
+        "empty_data": "Starea subsistemului este necunoscut"
+    },
+    "unifi_drive": {
+        "healthy": "Healthy",
+        "degraded": "Degraded",
+        "no_data": "No storage data available"
+    },
+    "duplicati": {
+        "jobs": "Jobs",
+        "stored": "Stored",
+        "lastBackup": "Last Run",
+        "nextRun": "Next Run",
+        "running": "Running",
+        "warnings": "Warnings",
+        "errors": "Errors"
+    },
+    "docker": {
+        "rx": "RX",
+        "tx": "TX",
+        "mem": "MEM",
+        "cpu": "CPU",
+        "running": "Rulează",
+        "offline": "Offline",
+        "error": "Eroare",
+        "unknown": "Necunoscut",
+        "healthy": "Sănătos",
+        "starting": "Începe",
+        "unhealthy": "Nesănătos",
+        "not_found": "Negăsit",
+        "exited": "Ieşit",
+        "partial": "Parțial",
+        "created": "Created",
+        "paused": "Paused",
+        "restarting": "Restarting",
+        "removing": "Removing",
+        "dead": "Dead"
+    },
+    "ping": {
+        "error": "Error",
+        "ping": "Ping",
+        "down": "Jos",
+        "up": "Sus",
+        "not_available": "Indisponibil"
+    },
+    "siteMonitor": {
+        "http_status": "Stare HTTP",
+        "error": "Error",
+        "response": "Răspuns",
+        "down": "Down",
+        "up": "Up",
+        "not_available": "Not Available"
+    },
+    "emby": {
+        "playing": "Activ",
+        "transcoding": "Transcodare",
+        "bitrate": "Rata de biți",
+        "no_active": "Niciun stream activ",
+        "movies": "Filme",
+        "series": "Serie",
+        "episodes": "Episoade",
+        "songs": "Melodii"
+    },
+    "jellyfin": {
+        "playing": "Playing",
+        "transcoding": "Transcoding",
+        "bitrate": "Bitrate",
+        "no_active": "No Active Streams",
+        "movies": "Movies",
+        "series": "Series",
+        "episodes": "Episodes",
+        "songs": "Songs",
+        "albums": "Albums"
+    },
+    "esphome": {
+        "offline": "Offline",
+        "offline_alt": "Offline",
+        "online": "Online",
+        "total": "Total",
+        "unknown": "Unknown"
+    },
+    "evcc": {
+        "pv_power": "Producție",
+        "battery_soc": "Baterie",
+        "grid_power": "Grilă",
+        "home_power": "Consum",
+        "charge_power": "Încărcător",
+        "kilowatt": "kW"
+    },
+    "flood": {
+        "download": "Descarcă",
+        "upload": "Încarcă",
+        "leech": "Leech",
+        "seed": "Seed"
+    },
+    "freshrss": {
+        "subscriptions": "Abonări",
+        "unread": "Necitit"
+    },
+    "fritzbox": {
+        "connectionStatus": "Status",
+        "connectionStatusUnconfigured": "Neconfigurat",
+        "connectionStatusConnecting": "Connecting",
+        "connectionStatusAuthenticating": "Authenticating",
+        "connectionStatusPendingDisconnect": "Pending Disconnect",
+        "connectionStatusDisconnecting": "Disconnecting",
+        "connectionStatusDisconnected": "Deconectat",
+        "connectionStatusConnected": "Conectat",
+        "uptime": "Uptime",
+        "maxDown": "Max. Down",
+        "maxUp": "Max. Up",
+        "down": "Down",
+        "up": "Up",
+        "received": "Primit",
+        "sent": "Trimis",
+        "externalIPAddress": "Ext. IP",
+        "externalIPv6Address": "Ext. IPv6",
+        "externalIPv6Prefix": "Ext. IPv6-Prefix"
+    },
+    "caddy": {
+        "upstreams": "Upstreamuri",
+        "requests": "Solicitări curente",
+        "requests_failed": "Solicitări eșuate"
+    },
+    "changedetectionio": {
+        "totalObserved": "Total observat",
+        "diffsDetected": "Diffuri detectate"
+    },
+    "channelsdvrserver": {
+        "shows": "Shows",
+        "recordings": "Înregistrări",
+        "scheduled": "Programate",
+        "passes": "Passes"
+    },
+    "tautulli": {
+        "playing": "Playing",
+        "transcoding": "Transcoding",
+        "bitrate": "Bitrate",
+        "no_active": "No Active Streams",
+        "plex_connection_error": "Check Plex Connection"
+    },
+    "tracearr": {
+        "no_active": "No Active Streams",
+        "streams": "Streams",
+        "transcodes": "Transcodes",
+        "directplay": "Direct Play",
+        "bitrate": "Bitrate"
+    },
+    "omada": {
+        "connectedAp": "Connected APs",
+        "activeUser": "Dispozitive active",
+        "alerts": "Alerte",
+        "connectedGateways": "Connected gateways",
+        "connectedSwitches": "Connected switches"
+    },
+    "nzbget": {
+        "rate": "Rată",
+        "remaining": "Rămas",
+        "downloaded": "Descărcat"
+    },
+    "plex": {
+        "streams": "Fluxuri active",
+        "albums": "Albume",
+        "movies": "Movies",
+        "tv": "Seriale"
+    },
+    "sabnzbd": {
+        "rate": "Rate",
+        "queue": "Coadă",
+        "timeleft": "Timp rămas"
+    },
+    "rutorrent": {
+        "active": "Activ",
+        "upload": "Upload",
+        "download": "Download"
+    },
+    "transmission": {
+        "download": "Download",
+        "upload": "Upload",
+        "leech": "Leech",
+        "seed": "Seed"
+    },
+    "qbittorrent": {
+        "download": "Download",
+        "upload": "Upload",
+        "leech": "Leech",
+        "seed": "Seed"
+    },
+    "qui": {
+        "leech": "Leech",
+        "download": "Download",
+        "seed": "Seed",
+        "upload": "Upload",
+        "total": "Total",
+        "errored": "Errored",
+        "ratio": "Ratio",
+        "freeSpace": "Free"
+    },
+    "qnap": {
+        "cpuUsage": "CPU Usage",
+        "memUsage": "MEM Usage",
+        "systemTempC": "Temperatură Sistem",
+        "poolUsage": "Pool Usage",
+        "volumeUsage": "Volume Usage",
+        "invalid": "Invalid"
+    },
+    "deluge": {
+        "download": "Download",
+        "upload": "Upload",
+        "leech": "Leech",
+        "seed": "Seed"
+    },
+    "develancacheui": {
+        "cachehitbytes": "Cache Hit Bytes",
+        "cachemissbytes": "Cache Miss Bytes"
+    },
+    "downloadstation": {
+        "download": "Download",
+        "upload": "Upload",
+        "leech": "Leech",
+        "seed": "Seed"
+    },
+    "sonarr": {
+        "wanted": "Dorite",
+        "queued": "În coadă",
+        "series": "Series",
+        "queue": "Queue",
+        "unknown": "Unknown"
+    },
+    "radarr": {
+        "wanted": "Wanted",
+        "missing": "Lipsește",
+        "queued": "Queued",
+        "movies": "Movies",
+        "queue": "Queue",
+        "unknown": "Unknown"
+    },
+    "lidarr": {
+        "wanted": "Wanted",
+        "queued": "Queued",
+        "artists": "Artiști"
+    },
+    "readarr": {
+        "wanted": "Wanted",
+        "queued": "Queued",
+        "books": "Cărți"
+    },
+    "bazarr": {
+        "missingEpisodes": "Episoade lipsă",
+        "missingMovies": "Filme lipsă"
+    },
+    "ombi": {
+        "pending": "În așteptare",
+        "approved": "Aprobate",
+        "available": "Disponibile"
+    },
+    "seerr": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "available": "Available",
+        "completed": "Completed",
+        "processing": "Processing",
+        "issues": "Open Issues"
+    },
+    "netalertx": {
+        "total": "Total",
+        "connected": "Connected",
+        "new_devices": "Dispozitive Noi",
+        "down_alerts": "Down Alerts"
+    },
+    "pihole": {
+        "queries": "Cereri",
+        "blocked": "Blocate",
+        "blocked_percent": "Blocked %",
+        "gravity": "Gravitație"
+    },
+    "adguard": {
+        "queries": "Queries",
+        "blocked": "Blocked",
+        "filtered": "Filtrate",
+        "latency": "Latentă"
+    },
+    "speedtest": {
+        "upload": "Upload",
+        "download": "Download",
+        "ping": "Ping"
+    },
+    "portainer": {
+        "running": "Running",
+        "stopped": "Oprit",
+        "total": "Total"
+    },
+    "suwayomi": {
+        "download": "Downloaded",
+        "nondownload": "Non-Downloaded",
+        "read": "Read",
+        "unread": "Unread",
+        "downloadedread": "Downloaded & Read",
+        "downloadedunread": "Downloaded & Unread",
+        "nondownloadedread": "Non-Downloaded & Read",
+        "nondownloadedunread": "Non-Downloaded & Unread"
+    },
+    "tailscale": {
+        "address": "Adresă",
+        "expires": "Expiră",
+        "never": "Niciodată",
+        "user": "User",
+        "hostname": "Hostname",
+        "name": "Name",
+        "client_version": "Client Version",
+        "os": "OS",
+        "created": "Created",
+        "authorized": "Authorized",
+        "is_external": "Is External",
+        "update_available": "Update Available",
+        "tags": "Tags",
+        "last_seen": "Last Seen",
+        "now": "Acum",
+        "years": "{{number}}y",
+        "weeks": "{{number}}w",
+        "days": "{{number}}d",
+        "hours": "{{number}}h",
+        "minutes": "{{number}}m",
+        "seconds": "{{number}}s",
+        "ago": "{{value}} Ago",
+        "true": "Yes",
+        "false": "No"
+    },
+    "technitium": {
+        "totalQueries": "Queries",
+        "totalNoError": "Success",
+        "totalServerFailure": "Failures",
+        "totalNxDomain": "NX Domains",
+        "totalRefused": "Refuzat",
+        "totalAuthoritative": "Authoritative",
+        "totalRecursive": "Recursiv",
+        "totalCached": "Cached",
+        "totalBlocked": "Blocked",
+        "totalDropped": "Dropped",
+        "totalClients": "Clienți"
+    },
+    "tdarr": {
+        "queue": "Queue",
+        "processed": "Processed",
+        "errored": "Errored",
+        "saved": "Salvat"
+    },
+    "traefik": {
+        "routers": "Routere",
+        "services": "Servicii",
+        "middleware": "Middleware"
+    },
+    "trilium": {
+        "version": "Version",
+        "notesCount": "Notes",
+        "dbSize": "Database Size",
+        "unknown": "Unknown"
+    },
+    "navidrome": {
+        "nothing_streaming": "No Active Streams",
+        "please_wait": "Please Wait"
+    },
+    "npm": {
+        "enabled": "Activat",
+        "disabled": "Dezactivat",
+        "total": "Total"
+    },
+    "coinmarketcap": {
+        "configure": "Configurați una sau mai multe criptomonede pe care să le urmăriți",
+        "1hour": "1 Oră",
+        "1day": "1 Zi",
+        "7days": "7 Zile",
+        "30days": "30 Zile"
+    },
+    "gotify": {
+        "apps": "Aplicații",
+        "clients": "Clients",
+        "messages": "Mesaje"
+    },
+    "prowlarr": {
+        "enableIndexers": "Indexatori",
+        "numberOfGrabs": "Descărcate",
+        "numberOfQueries": "Queries",
+        "numberOfFailGrabs": "Descărcări eșuate",
+        "numberOfFailQueries": "Cereri eșuate"
+    },
+    "jackett": {
+        "configured": "Configurat",
+        "errored": "Errored"
+    },
+    "strelaysrv": {
+        "numActiveSessions": "Sesiuni",
+        "numConnections": "Conexiuni",
+        "dataRelayed": "Retransmise",
+        "transferRate": "Rate"
+    },
+    "mastodon": {
+        "user_count": "Users",
+        "status_count": "Postări",
+        "domain_count": "Domenii"
+    },
+    "medusa": {
+        "wanted": "Wanted",
+        "queued": "Queued",
+        "series": "Series"
+    },
+    "minecraft": {
+        "players": "Jucători",
+        "version": "Versiune",
+        "status": "Status",
+        "up": "Online",
+        "down": "Offline"
+    },
+    "miniflux": {
+        "read": "Read",
+        "unread": "Unread"
+    },
+    "authentik": {
+        "users": "Users",
+        "loginsLast24H": "Autentificări (24h)",
+        "failedLoginsLast24H": "Conectări eșuate (24h)",
+        "authorizationsLast24H": "Auths (24h)"
+    },
+    "proxmox": {
+        "mem": "MEM",
+        "cpu": "CPU",
+        "lxc": "Container",
+        "vms": "Masini Virtuale"
+    },
+    "pulse": {
+        "nodes": "Nodes",
+        "vms": "VMs",
+        "lxcs": "LXCs"
+    },
+    "glances": {
+        "cpu": "CPU",
+        "load": "Load",
+        "wait": "Please wait",
+        "temp": "TEMP",
+        "_temp": "Temperatură",
+        "warn": "Warn",
+        "uptime": "UP",
+        "total": "Total",
+        "free": "Free",
+        "used": "Used",
+        "days": "d",
+        "hours": "h",
+        "crit": "Crit",
+        "read": "Read",
+        "write": "Write",
+        "gpu": "GPU",
+        "mem": "Mem",
+        "swap": "Swap"
+    },
+    "quicklaunch": {
+        "bookmark": "Marcaj",
+        "service": "Serviciu",
+        "search": "Caută",
+        "custom": "Personalizat",
+        "visit": "Vizită",
+        "url": "URL",
+        "searchsuggestion": "Sugestie"
+    },
+    "wmo": {
+        "0-day": "Însorit",
+        "0-night": "Fără nori",
+        "1-day": "Aproape însorit",
+        "1-night": "Aproape fără nori",
+        "2-day": "Parţial Înnorat",
+        "2-night": "Partly Cloudy",
+        "3-day": "Înnorat",
+        "3-night": "Cloudy",
+        "45-day": "Ceaţă",
+        "45-night": "Foggy",
+        "48-day": "Foggy",
+        "48-night": "Foggy",
+        "51-day": "Light Drizzle",
+        "51-night": "Light Drizzle",
+        "53-day": "Drizzle",
+        "53-night": "Drizzle",
+        "55-day": "Heavy Drizzle",
+        "55-night": "Heavy Drizzle",
+        "56-day": "Light Freezing Drizzle",
+        "56-night": "Light Freezing Drizzle",
+        "57-day": "Freezing Drizzle",
+        "57-night": "Freezing Drizzle",
+        "61-day": "Ploaie Ușoară",
+        "61-night": "Light Rain",
+        "63-day": "Ploaie",
+        "63-night": "Rain",
+        "65-day": "Heavy Rain",
+        "65-night": "Heavy Rain",
+        "66-day": "Freezing Rain",
+        "66-night": "Freezing Rain",
+        "67-day": "Freezing Rain",
+        "67-night": "Freezing Rain",
+        "71-day": "Light Snow",
+        "71-night": "Light Snow",
+        "73-day": "Snow",
+        "73-night": "Snow",
+        "75-day": "Heavy Snow",
+        "75-night": "Heavy Snow",
+        "77-day": "Snow Grains",
+        "77-night": "Snow Grains",
+        "80-day": "Light Showers",
+        "80-night": "Light Showers",
+        "81-day": "Showers",
+        "81-night": "Showers",
+        "82-day": "Heavy Showers",
+        "82-night": "Heavy Showers",
+        "85-day": "Snow Showers",
+        "85-night": "Snow Showers",
+        "86-day": "Snow Showers",
+        "86-night": "Snow Showers",
+        "95-day": "Thunderstorm",
+        "95-night": "Thunderstorm",
+        "96-day": "Thunderstorm With Hail",
+        "96-night": "Thunderstorm With Hail",
+        "99-day": "Thunderstorm With Hail",
+        "99-night": "Thunderstorm With Hail"
+    },
+    "homebridge": {
+        "available_update": "Sistem",
+        "updates": "Actualizări",
+        "update_available": "Actualizare Disponibilă",
+        "up_to_date": "Actualizat",
+        "child_bridges": "Child Bridges",
+        "child_bridges_status": "{{ok}}/{{total}}",
+        "up": "Up",
+        "pending": "Pending",
+        "down": "Down",
+        "ok": "Ok"
+    },
+    "healthchecks": {
+        "new": "Nou",
+        "up": "Up",
+        "grace": "In Grace Period",
+        "down": "Down",
+        "paused": "Pauză",
+        "status": "Status",
+        "last_ping": "Ultimul Ping",
+        "never": "No pings yet"
+    },
+    "watchtower": {
+        "containers_scanned": "Scanned",
+        "containers_updated": "Actualizat",
+        "containers_failed": "Eșuat"
+    },
+    "autobrr": {
+        "approvedPushes": "Approved",
+        "rejectedPushes": "Respinse",
+        "filters": "Filtre",
+        "indexers": "Indexers"
+    },
+    "tubearchivist": {
+        "downloads": "Queue",
+        "videos": "Videos",
+        "channels": "Canale",
+        "playlists": "Playlists"
+    },
+    "truenas": {
+        "load": "System Load",
+        "uptime": "Uptime",
+        "alerts": "Alerts"
+    },
+    "pyload": {
+        "speed": "Viteză",
+        "active": "Active",
+        "queue": "Queue",
+        "total": "Total"
+    },
+    "gluetun": {
+        "public_ip": "Public IP",
+        "region": "Regiune",
+        "country": "Țară",
+        "port_forwarded": "Port Forwarded"
+    },
+    "hdhomerun": {
+        "channels": "Channels",
+        "hd": "HD",
+        "tunerCount": "Tunere",
+        "channelNumber": "Canal",
+        "channelNetwork": "Rețea",
+        "signalStrength": "Putere",
+        "signalQuality": "Calitate",
+        "symbolQuality": "Quality",
+        "networkRate": "Bitrate",
+        "clientIP": "Client"
+    },
+    "scrutiny": {
+        "passed": "Passed",
+        "failed": "Failed",
+        "unknown": "Unknown"
+    },
+    "paperlessngx": {
+        "inbox": "Inbox",
+        "total": "Total"
+    },
+    "pangolin": {
+        "orgs": "Orgs",
+        "sites": "Sites",
+        "resources": "Resources",
+        "targets": "Targets",
+        "traffic": "Traffic",
+        "in": "In",
+        "out": "Out"
+    },
+    "peanut": {
+        "battery_charge": "Încărcare Baterie",
+        "ups_load": "UPS Load",
+        "ups_status": "UPS Status",
+        "online": "Online",
+        "on_battery": "On Battery",
+        "low_battery": "Baterie descărcată"
+    },
+    "nextdns": {
+        "wait": "Please Wait",
+        "no_devices": "No Device Data Received"
+    },
+    "mikrotik": {
+        "cpuLoad": "CPU Load",
+        "memoryUsed": "Memorie Utilizată",
+        "uptime": "Uptime",
+        "numberOfLeases": "Leases"
+    },
+    "xteve": {
+        "streams_all": "All Streams",
+        "streams_active": "Active Streams",
+        "streams_xepg": "XEPG Channels"
+    },
+    "opendtu": {
+        "yieldDay": "Astăzi",
+        "absolutePower": "Putere",
+        "relativePower": "Putere %",
+        "limit": "Limită"
+    },
+    "opnsense": {
+        "cpu": "CPU Load",
+        "memory": "Memorie Activă",
+        "wanUpload": "WAN Upload",
+        "wanDownload": "WAN Download"
+    },
+    "moonraker": {
+        "printer_state": "Starea Imprimantei",
+        "print_status": "Print Status",
+        "print_progress": "Progres",
+        "layers": "Straturi"
+    },
+    "octoprint": {
+        "printer_state": "Status",
+        "temp_tool": "Tool temp",
+        "temp_bed": "Bed temp",
+        "job_completion": "Completion"
+    },
+    "cloudflared": {
+        "origin_ip": "Origin IP",
+        "status": "Status"
+    },
+    "pfsense": {
+        "load": "Load Avg",
+        "memory": "Mem Usage",
+        "wanStatus": "WAN Status",
+        "up": "Up",
+        "down": "Down",
+        "temp": "Temp",
+        "disk": "Utilizare Disc",
+        "wanIP": "WAN IP"
+    },
+    "proxmoxbackupserver": {
+        "datastore_usage": "Datastore",
+        "failed_tasks_24h": "Failed Tasks 24h",
+        "cpu_usage": "CPU",
+        "memory_usage": "Memorie"
+    },
+    "immich": {
+        "users": "Users",
+        "photos": "Fotografii",
+        "videos": "Videos",
+        "storage": "Storage"
+    },
+    "uptimekuma": {
+        "up": "Sites Up",
+        "down": "Sites Down",
+        "uptime": "Uptime",
+        "incident": "Incident",
+        "m": "m"
+    },
+    "atsumeru": {
+        "series": "Series",
+        "archives": "Arhive",
+        "chapters": "Chapters",
+        "categories": "Categorii"
+    },
+    "komga": {
+        "libraries": "Biblioteci",
+        "series": "Series",
+        "books": "Books"
+    },
+    "diskstation": {
+        "days": "Days",
+        "uptime": "Uptime",
+        "volumeAvailable": "Available"
+    },
+    "dispatcharr": {
+        "channels": "Channels",
+        "streams": "Streams"
+    },
+    "mylar": {
+        "series": "Series",
+        "issues": "Issues",
+        "wanted": "Wanted"
+    },
+    "photoprism": {
+        "albums": "Albums",
+        "photos": "Photos",
+        "videos": "Videos",
+        "people": "Oameni"
+    },
+    "fileflows": {
+        "queue": "Queue",
+        "processing": "Processing",
+        "processed": "Processed",
+        "time": "Timp",
+        "failed": "Failed"
+    },
+    "firefly": {
+        "networth": "Net Worth",
+        "budget": "Buget"
+    },
+    "grafana": {
+        "dashboards": "Dashboards",
+        "datasources": "Data Sources",
+        "totalalerts": "Total Alerts",
+        "alertstriggered": "Alerts Triggered"
+    },
+    "nextcloud": {
+        "cpuload": "Cpu Load",
+        "memoryusage": "Memorie Utilizată",
+        "freespace": "Spațiu Liber",
+        "activeusers": "Utilizatori Activi",
+        "numfiles": "Fișiere",
+        "numshares": "Articole Partajate"
+    },
+    "kopia": {
+        "status": "Status",
+        "size": "Mărime",
+        "lastrun": "Ultima Rulare",
+        "nextrun": "Următoarea Rulare",
+        "failed": "Failed"
+    },
+    "unmanic": {
+        "active_workers": "Muncitori activi",
+        "total_workers": "Muncitori totali",
+        "records_total": "Lungimea cozii"
+    },
+    "pterodactyl": {
+        "servers": "Servere",
+        "nodes": "Noduri"
+    },
+    "prometheus": {
+        "targets_up": "Targets Up",
+        "targets_down": "Targets Down",
+        "targets_total": "Total Targets"
+    },
+    "gatus": {
+        "up": "Sites Up",
+        "down": "Sites Down",
+        "uptime": "Uptime"
+    },
+    "ghostfolio": {
+        "gross_percent_today": "Today",
+        "gross_percent_1y": "Un an",
+        "gross_percent_max": "Tot timpul",
+        "net_worth": "Net Worth"
+    },
+    "audiobookshelf": {
+        "podcasts": "Podcasturi",
+        "books": "Books",
+        "podcastsDuration": "Durată",
+        "booksDuration": "Duration"
+    },
+    "homeassistant": {
+        "people_home": "People Home",
+        "lights_on": "Lights On",
+        "switches_on": "Switches On"
+    },
+    "whatsupdocker": {
+        "monitoring": "Monitoring",
+        "updates": "Updates"
+    },
+    "calibreweb": {
+        "books": "Books",
+        "authors": "Autori",
+        "categories": "Categories",
+        "series": "Series"
+    },
+    "booklore": {
+        "libraries": "Libraries",
+        "books": "Books",
+        "reading": "Reading",
+        "finished": "Finished"
+    },
+    "bookorbit": {
+        "books": "Books",
+        "authors": "Authors",
+        "series": "Series",
+        "storage": "Storage",
+        "reading": "Reading",
+        "finished": "Finished"
+    },
+    "jdownloader": {
+        "downloadCount": "Queue",
+        "downloadBytesRemaining": "Remaining",
+        "downloadTotalBytes": "Size",
+        "downloadSpeed": "Speed"
+    },
+    "kavita": {
+        "seriesCount": "Series",
+        "totalFiles": "Files"
+    },
+    "azuredevops": {
+        "result": "Rezultat",
+        "status": "Status",
+        "buildId": "Build ID",
+        "succeeded": "Succeeded",
+        "notStarted": "Not Started",
+        "failed": "Failed",
+        "canceled": "Anulat",
+        "inProgress": "În Progres",
+        "totalPrs": "Total PRs",
+        "myPrs": "My PRs",
+        "approved": "Approved"
+    },
+    "gamedig": {
+        "status": "Status",
+        "online": "Online",
+        "offline": "Offline",
+        "name": "Nume",
+        "map": "Hartă",
+        "currentPlayers": "Current players",
+        "players": "Players",
+        "maxPlayers": "Max players",
+        "bots": "Boți",
+        "ping": "Ping"
+    },
+    "urbackup": {
+        "ok": "Ok",
+        "errored": "Erori",
+        "noRecent": "Out of Date",
+        "totalUsed": "Used Storage"
+    },
+    "mealie": {
+        "recipes": "Recipes",
+        "users": "Users",
+        "categories": "Categories",
+        "tags": "Etichete"
+    },
+    "openmediavault": {
+        "downloading": "Downloading",
+        "total": "Total",
+        "running": "Running",
+        "stopped": "Stopped",
+        "passed": "Passed",
+        "failed": "Failed"
+    },
+    "openwrt": {
+        "uptime": "Uptime",
+        "cpuLoad": "CPU Load Avg (5m)",
+        "up": "Up",
+        "down": "Down",
+        "bytesTx": "Transmis",
+        "bytesRx": "Received"
+    },
+    "uptimerobot": {
+        "status": "Status",
+        "uptime": "Uptime",
+        "lastDown": "Last Downtime",
+        "downDuration": "Downtime Duration",
+        "sitesUp": "Sites Up",
+        "sitesDown": "Sites Down",
+        "paused": "Paused",
+        "notyetchecked": "Not Yet Checked",
+        "up": "Up",
+        "seemsdown": "Seems Down",
+        "down": "Down",
+        "unknown": "Unknown"
+    },
+    "calendar": {
+        "inCinemas": "În cinematografe",
+        "physicalRelease": "Physical release",
+        "digitalRelease": "Digital release",
+        "noEventsToday": "No events for today!",
+        "noEventsFound": "No events found",
+        "errorWhenLoadingData": "Error when loading calendar data"
+    },
+    "romm": {
+        "platforms": "Platforme",
+        "totalRoms": "Jocuri",
+        "saves": "Salvări",
+        "states": "States",
+        "screenshots": "Screenshots",
+        "totalfilesize": "Mărime Totală"
+    },
+    "mailcow": {
+        "domains": "Domains",
+        "mailboxes": "Cutii poştale",
+        "mails": "Mails",
+        "storage": "Storage"
+    },
+    "maintainerr": {
+        "itemsHandled": "Items Handled",
+        "episodesHandled": "Episodes Handled",
+        "moviesHandled": "Movies Handled",
+        "showsHandled": "Shows Handled",
+        "seasonsHandled": "Seasons Handled",
+        "reclaimable": "Reclaimable",
+        "movieReclaimable": "Movie Reclaimable",
+        "showReclaimable": "Show Reclaimable",
+        "totalCapacity": "Total Capacity"
+    },
+    "netdata": {
+        "warnings": "Warnings",
+        "criticals": "Critice"
+    },
+    "ntfy": {
+        "title": "Title",
+        "priority": "Priority",
+        "lastReceived": "Last Received",
+        "message": "Message",
+        "tags": "Tags",
+        "none": "None",
+        "min": "Min",
+        "low": "Low",
+        "default": "Default",
+        "high": "High",
+        "urgent": "Urgent"
+    },
+    "plantit": {
+        "events": "Evenimente",
+        "plants": "Plante",
+        "photos": "Photos",
+        "species": "Specii"
+    },
+    "gitea": {
+        "notifications": "Notificări",
+        "issues": "Issues",
+        "pulls": "Pull Requests",
+        "repositories": "Repozitorii"
+    },
+    "stash": {
+        "scenes": "Scene",
+        "scenesPlayed": "Scenes Played",
+        "playCount": "Total Plays",
+        "playDuration": "Time Watched",
+        "sceneSize": "Scenes Size",
+        "sceneDuration": "Scenes Duration",
+        "images": "Imagini",
+        "imageSize": "Images Size",
+        "galleries": "Galerii",
+        "performers": "Performers",
+        "studios": "Studios",
+        "movies": "Movies",
+        "tags": "Tags",
+        "oCount": "O Count"
+    },
+    "tandoor": {
+        "users": "Users",
+        "recipes": "Recipes",
+        "keywords": "Cuvinte cheie"
+    },
+    "homebox": {
+        "items": "Items",
+        "totalWithWarranty": "Cu Garanție",
+        "locations": "Locaţii",
+        "labels": "Etichete",
+        "users": "Users",
+        "totalValue": "Total Value"
+    },
+    "crowdsec": {
+        "alerts": "Alerts",
+        "bans": "Bans"
+    },
+    "wgeasy": {
+        "connected": "Connected",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "total": "Total"
+    },
+    "swagdashboard": {
+        "proxied": "Proxied",
+        "auth": "With Auth",
+        "outdated": "Învechit",
+        "banned": "Banned"
+    },
+    "myspeed": {
+        "ping": "Ping",
+        "download": "Download",
+        "upload": "Upload"
+    },
+    "stocks": {
+        "stocks": "Acțiuni",
+        "loading": "Loading",
+        "open": "Open - US Market",
+        "closed": "Closed - US Market",
+        "invalidConfiguration": "Invalid Configuration"
+    },
+    "frigate": {
+        "cameras": "Camere",
+        "uptime": "Uptime",
+        "version": "Version"
+    },
+    "linkwarden": {
+        "links": "Links",
+        "collections": "Colecții",
+        "tags": "Tags"
+    },
+    "zabbix": {
+        "unclassified": "Not classified",
+        "information": "Information",
+        "warning": "Atenție",
+        "average": "Medie",
+        "high": "Înalt",
+        "disaster": "Dezastru"
+    },
+    "lubelogger": {
+        "vehicle": "Vehicul",
+        "vehicles": "Vehicule",
+        "serviceRecords": "Service Records",
+        "reminders": "Reminders",
+        "nextReminder": "Next Reminder",
+        "none": "Niciunul"
+    },
+    "vikunja": {
+        "projects": "Active Projects",
+        "tasks7d": "Tasks Due This Week",
+        "tasksOverdue": "Overdue Tasks",
+        "tasksInProgress": "Tasks In Progress"
+    },
+    "headscale": {
+        "name": "Name",
+        "address": "Address",
+        "last_seen": "Last Seen",
+        "status": "Status",
+        "online": "Online",
+        "offline": "Offline"
+    },
+    "beszel": {
+        "name": "Name",
+        "systems": "Sistem",
+        "up": "Up",
+        "down": "Down",
+        "paused": "Paused",
+        "pending": "Pending",
+        "status": "Status",
+        "updated": "Updated",
+        "cpu": "CPU",
+        "memory": "MEM",
+        "disk": "Disk",
+        "network": "NET"
+    },
+    "argocd": {
+        "apps": "Aplicaţii",
+        "synced": "Synced",
+        "outOfSync": "Out Of Sync",
+        "healthy": "Healthy",
+        "degraded": "Degraded",
+        "progressing": "Progressing",
+        "missing": "Missing",
+        "suspended": "Suspendat"
+    },
+    "spoolman": {
+        "loading": "Loading"
+    },
+    "gitlab": {
+        "groups": "Grupuri",
+        "issues": "Issues",
+        "merges": "Merge Requests",
+        "projects": "Proiecte"
+    },
+    "apcups": {
+        "status": "Status",
+        "load": "Load",
+        "bcharge": "Battery Charge",
+        "timeleft": "Time Left"
+    },
+    "karakeep": {
+        "bookmarks": "Marcaje",
+        "favorites": "Favorite",
+        "archived": "Arhivat",
+        "highlights": "Highlights",
+        "lists": "Liste",
+        "tags": "Tags"
+    },
+    "slskd": {
+        "slskStatus": "Network",
+        "connected": "Connected",
+        "disconnected": "Disconnected",
+        "updateStatus": "Update",
+        "update_yes": "Available",
+        "update_no": "Up to Date",
+        "downloads": "Downloads",
+        "uploads": "Uploads",
+        "sharedFiles": "Files"
+    },
+    "jellystat": {
+        "songs": "Songs",
+        "movies": "Movies",
+        "episodes": "Episodes",
+        "other": "Altele"
+    },
+    "checkmk": {
+        "serviceErrors": "Service issues",
+        "hostErrors": "Host issues"
+    },
+    "komodo": {
+        "total": "Total",
+        "running": "Running",
+        "stopped": "Stopped",
+        "down": "Down",
+        "unhealthy": "Unhealthy",
+        "unknown": "Unknown",
+        "servers": "Servers",
+        "stacks": "Stacks",
+        "containers": "Containers"
+    },
+    "filebrowser": {
+        "available": "Available",
+        "used": "Used",
+        "total": "Total"
+    },
+    "wallos": {
+        "activeSubscriptions": "Subscriptions",
+        "thisMonthlyCost": "This Month",
+        "nextMonthlyCost": "Next Month",
+        "previousMonthlyCost": "Prev. Month",
+        "nextRenewingSubscription": "Next Payment"
+    },
+    "unraid": {
+        "STARTED": "Started",
+        "STOPPED": "Stopped",
+        "NEW_ARRAY": "New Array",
+        "RECON_DISK": "Reconstructing Disk",
+        "DISABLE_DISK": "Disk Disabled",
+        "SWAP_DSBL": "Swap Disable",
+        "INVALID_EXPANSION": "Invalid Expansion",
+        "PARITY_NOT_BIGGEST": "Parity Not Biggest",
+        "TOO_MANY_MISSING_DISKS": "Too Many Missing Disks",
+        "NEW_DISK_TOO_SMALL": "New Disk Too Small",
+        "NO_DATA_DISKS": "No Data Disks",
+        "notifications": "Notifications",
+        "status": "Status",
+        "cpu": "CPU",
+        "memoryUsed": "Memory Used",
+        "memoryAvailable": "Memory Available",
+        "arrayUsed": "Array Used",
+        "arrayFree": "Array Free",
+        "poolUsed": "{{pool}} Used",
+        "poolFree": "{{pool}} Free"
+    },
+    "backrest": {
+        "num_plans": "Plans",
+        "num_success_30": "Successes",
+        "num_failure_30": "Failures",
+        "num_success_latest": "Succeeding",
+        "num_failure_latest": "Failing",
+        "bytes_added_30": "Bytes Added"
+    },
+    "yourspotify": {
+        "songs": "Songs",
+        "time": "Time",
+        "artists": "Artists"
+    },
+    "arcane": {
+        "containers": "Containers",
+        "images": "Images",
+        "image_updates": "Image Updates",
+        "images_unused": "Unused",
+        "environment_required": "Environment ID Required"
+    },
+    "dockhand": {
+        "running": "Running",
+        "stopped": "Stopped",
+        "cpu": "CPU",
+        "memory": "Memory",
+        "images": "Images",
+        "volumes": "Volumes",
+        "events_today": "Events Today",
+        "pending_updates": "Pending Updates",
+        "stacks": "Stacks",
+        "paused": "Paused",
+        "total": "Total",
+        "environment_not_found": "Environment Not Found"
+    },
+    "sparkyfitness": {
+        "eaten": "Eaten",
+        "burned": "Burned",
+        "remaining": "Remaining",
+        "steps": "Steps"
+    },
+    "syncthing": {
+        "connected": "Connected",
+        "synced": "Synced",
+        "errors": "Errors",
+        "storage": "Storage"
+    },
+    "sportarr": {
+        "wanted": "Wanted",
+        "queued": "Queued",
+        "leagues": "Leagues"
+    },
+    "feed": {
+        "noItems": "No items"
+    }
+}

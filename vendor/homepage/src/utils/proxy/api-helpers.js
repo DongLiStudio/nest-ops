@@ -1,0 +1,73 @@
+export function formatApiCall(url, args) {
+  const find = /\{.*?\}/g;
+  const replace = (match) => {
+    const key = match.replace(/\{|\}/g, "");
+    let value = args[key];
+    if (key === "url") {
+      value = value.replace(/\/+$/, ""); // remove trailing slashes
+    }
+    return value?.toString() || "";
+  };
+
+  return url.replace(find, replace).replace(find, replace);
+}
+
+export function parseVersionForUrl(version, defaultValue = null) {
+  if (version === undefined || version === null || version === "") {
+    return defaultValue;
+  }
+
+  if (typeof version === "number") {
+    return Number.isInteger(version) && version >= 0 ? version : defaultValue;
+  }
+
+  if (typeof version === "string" && /^\d+$/.test(version)) {
+    return Number(version);
+  }
+
+  return defaultValue;
+}
+
+export function getURLSearchParams(widget, endpoint) {
+  const params = new URLSearchParams({
+    group: widget.service_group,
+    service: widget.service_name,
+    index: widget.index,
+  });
+  if (endpoint) {
+    params.append("endpoint", endpoint);
+  }
+  return params;
+}
+
+export function formatProxyUrl(widget, endpoint, queryParams) {
+  const params = getURLSearchParams(widget, endpoint);
+  if (queryParams) {
+    params.append("query", JSON.stringify(queryParams));
+  }
+  return `/api/services/proxy?${params.toString()}`;
+}
+
+export function asJson(data) {
+  if (data?.length > 0) {
+    const json = JSON.parse(data.toString());
+    return json;
+  }
+  return data;
+}
+
+export function jsonArrayTransform(data, transform) {
+  const json = asJson(data);
+  if (json instanceof Array) {
+    return transform(json);
+  }
+  return json;
+}
+
+export function jsonArrayFilter(data, filter) {
+  return jsonArrayTransform(data, (items) => items.filter(filter));
+}
+
+export function sanitizeErrorURL(errorURL) {
+  return `${new URL(errorURL).hostname} (see logs for details)`;
+}
