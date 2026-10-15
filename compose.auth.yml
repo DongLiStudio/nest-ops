@@ -1,0 +1,25 @@
+name: ${COMPOSE_PROJECT_NAME:-nest-ops}-auth
+services:
+  authelia:
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    image: ${AUTHELIA_IMAGE}
+    user: 1000:1000
+    volumes:
+    - ./runtime/auth/config:/config:ro
+    - ./runtime/auth/data:/data
+    tmpfs:
+    - /tmp
+networks:
+  default:
+    external: true
+    name: ${NESTOPS_NETWORK:-nestops-edge}

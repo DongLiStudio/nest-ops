@@ -20,3 +20,5 @@ jobs:
           python scripts/init.py
           python scripts/prepare.py
           docker compose config --quiet
+          docker compose -f compose.gateway.yml config --quiet
+          docker compose -f compose.auth.yml config --quiet

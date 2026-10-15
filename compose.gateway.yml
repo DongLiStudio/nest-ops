@@ -1,0 +1,35 @@
+name: ${COMPOSE_PROJECT_NAME:-nest-ops}-gateway
+services:
+  gateway:
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    image: ${NGINX_IMAGE}
+    user: 101:101
+    entrypoint:
+    - nginx
+    - -g
+    - daemon off;
+    ports:
+    - 80:8080
+    - 443:8443
+    volumes:
+    - ./runtime/nginx.conf:/etc/nginx/nginx.conf:ro
+    - ./runtime/tls:/certs:ro
+    - ./console:/console:ro
+    tmpfs:
+    - /tmp
+    - /var/cache/nginx
+    - /var/run
+networks:
+  default:
+    external: true
+    name: ${NESTOPS_NETWORK:-nestops-edge}

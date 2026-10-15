@@ -2,7 +2,7 @@
 
 **你的服务入口与运行全景。**
 
-基于 [Homepage](https://github.com/gethomepage/homepage) 的轻量运维门户，统一服务导航、服务器资产、可用性监测与异常告警。保留官方 Homepage，使用独立 JS/CSS 扩展，中心端由一份 Compose 管理。
+基于 [Homepage](https://github.com/gethomepage/homepage) 的轻量运维门户，统一服务导航、服务器资产、可用性监测与异常告警。保留官方 Homepage，使用独立 JS/CSS 扩展，NestOps 本体由一份 Compose 管理；认证中心和共享网关分别独立部署。
 
 ## 能力
 
@@ -24,8 +24,11 @@ python3 scripts/init.py
 # 编辑 runtime/console/registry.json；按文档配置每台采集器
 # 把证书放到 runtime/tls/fullchain.pem 与 privkey.pem
 python3 scripts/prepare.py
+docker network inspect nestops-edge >/dev/null 2>&1 || docker network create nestops-edge
 docker compose config --quiet
+docker compose -f compose.gateway.yml config --quiet
 docker compose up -d
+docker compose -f compose.gateway.yml up -d
 docker compose ps
 ```
 
@@ -48,3 +51,5 @@ python3 scripts/test_collectors.py
 NestOps 以 GPL-3.0 发布。内附固定版本 Homepage 源码与完整许可证，参见 [UPSTREAM.md](UPSTREAM.md)。Homepage、Authelia、Nginx、Python 及其他第三方组件各自的许可证和署名保持不变。
 
 中心服务只提供观察和入口；网页重启、更新和远程命令未实现。监测开始前没有历史数据，未知不计作正常，运行状态不等同于完整业务验收。
+
+部署边界：`compose.yml` 仅包含 Homepage、console、status。`compose.gateway.yml` 管理共享 HTTPS 网关；可选 `compose.auth.yml` 单独管理 Authelia。已有认证中心时直接连接外部 OIDC，无需部署本仓库的认证示例。三组服务分别启动、停止和更新，勿把三个文件通过 `-f` 合并成一个项目。

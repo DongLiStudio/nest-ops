@@ -6,6 +6,6 @@
 
 恢复：安装 Docker、准备原有私有配置和证书、恢复一致性数据库、核对目录权限、docker compose up -d；确认采集端令牌与中心一致。不要在恢复时自动生成新密钥覆盖原身份。
 
-卸载中心：docker compose --profile oidc down。默认保留 runtime 全部配置和历史；确认不再需要后由管理员定向删除。先卸载远端采集器并撤销令牌。证书续期、DNS及其他共享服务不由此卸载。
+卸载 NestOps：docker compose down。认证中心和共享网关继续运行；仅在确实退役它们时分别执行 docker compose -f compose.auth.yml down 和 docker compose -f compose.gateway.yml down。默认保留 runtime 全部配置和历史；确认不再需要后由管理员定向删除。先卸载远端采集器并撤销令牌。证书续期、DNS及其他共享服务不由此卸载。
 
 此项目不提供业务数据库备份或所有服务器的统一备份方案；这些可以接入独立备份系统。
