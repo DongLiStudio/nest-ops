@@ -40,3 +40,7 @@ a:focus-visible,button:focus-visible,input:focus-visible { outline:2px solid var
 .home-launcher-downloads { max-width:1180px;margin:28px auto 48px;padding:0 20px;display:flex;justify-content:center;gap:20px;flex-wrap:wrap;font-size:12px;color:#c6dbe8; }
 .home-launcher-downloads:empty { display:none; }
 .home-launcher-downloads a { color:#e5f5ff;text-decoration:underline;text-underline-offset:4px; }
+
+/* The background must not depend on content arriving or wrapper height. */
+html,body,#__next,#page_wrapper,#inner_wrapper { min-height:100vh; min-height:100svh; }
+#background { position:fixed !important; inset:0 !important; width:100% !important; height:100vh !important; height:100svh !important; background-size:cover !important; background-position:center !important; background-repeat:no-repeat !important; pointer-events:none; }

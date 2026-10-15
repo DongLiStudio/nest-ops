@@ -2,18 +2,28 @@
 (() => {
  if(window.__nestOpsBootstrap)return;window.__nestOpsBootstrap=true;
  document.documentElement.lang='zh-CN';document.documentElement.setAttribute('translate','no');
- const style=document.createElement('link');style.rel='stylesheet';style.href='/_ops/ui.css?v=20261015-complete';document.head.append(style);const asset='/_ops/ui.js?v=20261015-complete';let script,timer;
+ const asset='/_ops/ui.js?v=20261016-paint';let script,timer,style,stylesReady=false,loading=false;
  function failure(){
   if(document.querySelector('#home-console')||document.querySelector('#home-console-load-error'))return;
   const footer=document.querySelector('#footer');if(!footer)return;
-  const surface=document.createElement('section');surface.id='home-console-load-error';surface.className='home-console';surface.setAttribute('role','status');
+  const surface=document.createElement('section');surface.id='home-console-load-error';surface.className='home-console';surface.style.cssText='margin:28px auto;padding:24px;max-width:1108px;color:#f4f9fd;background:#142b3b;border-radius:22px';surface.setAttribute('role','status');
   const text=document.createElement('p');text.textContent='服务目录暂时无法加载，请重试。';
   const retry=document.createElement('button');retry.type='button';retry.className='ops-button';retry.textContent='重新加载';retry.onclick=()=>{surface.remove();load();};surface.append(text,retry);footer.before(surface);
  }
+ function loadScript(){
+  if(script)script.remove();script=document.createElement('script');script.src=asset;script.async=true;script.dataset.nestOpsConsole='';
+  script.onerror=()=>{loading=false;clearTimeout(timer);failure();};
+  script.onload=()=>{loading=false;clearTimeout(timer);};document.head.append(script);
+ }
  function load(){
-  clearTimeout(timer);if(document.querySelector('#home-console'))return;
-  if(script)script.remove();script=document.createElement('script');script.src=asset;script.async=true;script.dataset.nestOpsConsole='';script.onerror=failure;
-  script.onload=()=>clearTimeout(timer);document.head.append(script);timer=setTimeout(failure,20000);
+  if(loading||document.querySelector('#home-console'))return;
+  loading=true;clearTimeout(timer);
+  timer=setTimeout(()=>{loading=false;if(style&&!stylesReady){style.onload=null;style.remove();}if(script)script.remove();failure();},20000);
+  if(stylesReady){loadScript();return;}
+  if(style)style.remove();style=document.createElement('link');style.rel='stylesheet';style.href='/_ops/ui.css?v=20261016-paint';
+  // Never construct visible skeletons before their layout CSS is available.
+  style.onload=()=>{stylesReady=true;loadScript();};
+  style.onerror=()=>{loading=false;clearTimeout(timer);failure();};document.head.append(style);
  }
  load();
  // Keep the original user gesture when invoking the installed native launcher.
