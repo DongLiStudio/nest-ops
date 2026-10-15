@@ -6,7 +6,7 @@ NestOps Compose 仅包含 Homepage、console、status；共享网关使用 compo
 2. 配置 .env 域名、DNS 与 HTTPS 证书。网关 UID/GID 101，需要证书读取权限，例如 root 安装后将 runtime/tls 的证书属主设为 101:101、文件模式 600。runtime 父目录保持 755；不公开私钥。
 3. 运行 prepare.py。自定义背景自行放 runtime/images 并配置 settings.yaml；仓库不发布个人照片，默认使用纯色背景。
 4. 默认使用 Homepage 原生密码认证。首次上线前读取 runtime/homepage.env 中生成的密码并妥善保管。
-5. 如需双因素：使用 examples/homepage-oidc.env 替换相应环境项，删除密码项；在 runtime/auth/config 放置经 Authelia 验证的用户、session、storage、notifier 和 OIDC issuer/client 配置。把 examples/authelia-nginx.conf 中域名改为实际 auth 域名，加入 runtime/nginx.conf 的 http 块。运行 docker compose -f compose.auth.yml up -d；已有外部认证中心时不启动此示例。不要混用示例占位密钥与现网身份。
+5. 如需双因素：使用 examples/homepage-oidc.env 替换相应环境项，删除密码项；在 runtime/auth/config 放置经 Authelia 验证的 session、storage、notifier 和 OIDC issuer/client 配置；用户数据库必须放在可写的 runtime/auth/data/users.yml，文件后端路径设为 /data/users.yml，属主匹配容器用户且权限600。把 examples/authelia-nginx.conf 中域名改为实际 auth 域名，加入 runtime/nginx.conf 的 http 块。运行 docker compose -f compose.auth.yml up -d；已有外部认证中心时不启动此示例。不要混用示例占位密钥与现网身份。
 6. 在 runtime/console/registry.json 登记自己的服务。运行 add_collector.py 生成每台令牌，安全传输配置并安装。重启 console 读取目录和令牌更新。
 7. 可选定制家庭卡片：将状态 agent 部署到 UPS 所在机器，设置 STATUS_URL 为中心 /_home_status/ingest、UPS_URL 为本地 UPS API、STATUS_TOKEN_FILE 为该采样器令牌文件。使用中心生成的 status-token，勿上传 UPS API 自身密钥。
 
@@ -15,3 +15,5 @@ NestOps Compose 仅包含 Homepage、console、status；共享网关使用 compo
 生产定制登录配置和卡片数据不由通用示例覆盖。此包不自动签发证书；接入已有证书自动更新方案，并在换证后执行 docker compose -f compose.gateway.yml exec gateway nginx -t，再执行 docker compose -f compose.gateway.yml exec gateway nginx -s reload。
 
 跨项目网络：先创建 `.env` 中 NESTOPS_NETWORK 指定的外部网络（默认 nestops-edge）。三份 Compose 均引用此网络，down 不会删除它；网络只用于内部代理，不发布后端端口。不同安装必须使用不同网络名。认证与网关示例可放在独立部署目录，届时调整各自挂载路径和 .env；不要复制已有认证数据库来创建第二个身份源。
+
+密码持久化验收：配置目录保持只读，但文件认证后端会在改密时写回用户数据库，因此不能把用户数据库放在只读 /config。在网页确认改密成功后，退出并验证新密码可用、旧密码拒绝；受控重启认证容器后重复验证。禁用密码重置与禁用已登录用户改密是不同配置，不可混淆。不要用HTTP200或健康检查代替凭据持久化验收。
