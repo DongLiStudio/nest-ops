@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Incremental rendering regression</title>
+<body><h1>Incremental rendering regression</h1><pre id="result">Running</pre><div id="fixture"></div>
+<script>
+(async()=>{
+ const source=await (await fetch('/ui.js')).text();
+ const code=source.slice(source.indexOf(' function reconcile('),source.indexOf(' function renderBody('));
+ const reconcile=Function(code+';return reconcile;')();
+ const fixture=document.querySelector('#fixture'),make=html=>{const n=document.createElement('div');n.innerHTML=html;return n;};
+ let count=0;const check=(condition,message)=>{if(!condition)throw Error(message);count++;};
+ fixture.innerHTML='<section><strong>1</strong><span>unchanged</span></section><button>old</button>';
+ const section=fixture.firstChild,unchanged=section.lastChild,oldButton=fixture.lastChild;
+ const fresh=make('<section><strong>2</strong><span>unchanged</span></section><button>new</button>');
+ let clicked=false;fresh.lastChild.onclick=()=>{clicked=true;};reconcile(fixture,fresh);
+ check(fixture.firstChild===section,'container identity');check(section.lastChild===unchanged,'unchanged identity');check(section.firstChild.textContent==='2','updated text');
+ check(fixture.lastChild!==oldButton,'interactive closure replaced');fixture.lastChild.click();check(clicked,'new handler works');
+ const event=document.createElement('section');event.textContent='retained event';fixture.append(event);
+ const fresh2=make('<section><strong>3</strong><span>unchanged</span></section><button>new</button>');
+ const marker=document.createElement('section');marker.opsRetained=event;fresh2.append(marker);reconcile(fixture,fresh2);
+ check(fixture.lastChild===event,'event panel retained');check(section.firstChild.textContent==='3','second update');
+ const before=[...fixture.childNodes];const fresh3=make('<section><strong>3</strong><span>unchanged</span></section><button>new</button>');const marker3=document.createElement('section');marker3.opsRetained=event;fresh3.append(marker3);reconcile(fixture,fresh3);
+ check([...fixture.childNodes].every((node,index)=>node===before[index]),'unchanged poll replaces zero regions');
+ document.querySelector('#result').textContent='PASS '+count+' assertions';fixture.remove();
+})().catch(error=>{document.querySelector('#result').textContent='FAIL '+error.stack;});
+</script></body></html>

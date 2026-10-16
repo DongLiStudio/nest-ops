@@ -91,9 +91,10 @@ python3 scripts/verify.py
 python3 console/tests.py
 python3 scripts/test_collectors.py
 node scripts/test_ui.cjs
+node scripts/test_loading.cjs
 ```
 
-这些是源码、脱敏与离线回归检查；不替代实际 Docker 启动、认证、TLS、浏览器交互和通知送达验收。首次部署应按部署文档逐项检查。
+这些是源码、脱敏与离线回归检查；不替代实际 Docker 启动、认证、TLS、浏览器交互和通知送达验收。首次部署应按部署文档逐项检查。性能策略、缓存时效和合成基准见 [控制台性能说明](docs/performance.md)。
 
 ## 参与贡献与交流
 

@@ -23,8 +23,14 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass
     def do_GET(self):
         p=urlsplit(self.path);q=parse_qs(p.query)
+        if p.path=='/test-reconcile':
+            raw=(ROOT/'scripts/test_reconcile.html').read_bytes();self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.end_headers();self.wfile.write(raw);return
         if p.path=='/_ops/api':
             payload=dict(services=services(),servers=[dict(id=key,name=name,address=address,state='up',metrics={},last_seen=NOW,monitoring_issue=False) for key,name,address in HOSTS],summary=dict(servers=3,services=36,apps=36,abnormal=1,unknown=0,abnormal_servers=0,availability=99.175,availability_services=36,coverage=91.75),events=[],household={},documents=[],downloads=[])
+        elif p.path=='/_ops/household':
+            payload=dict(generated_at=NOW,household={})
+        elif p.path=='/_ops/service':
+            payload=dict(service=q.get('service',[''])[0],latency=[[NOW-300*j,45+8*math.sin(j/4)] for j in reversed(range(48))])
         elif p.path=='/_ops/events':
             page=min(16,max(1,int(q.get('page',['1'])[0])));sid=q.get('service',[''])[0]
             items=services()

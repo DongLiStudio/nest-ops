@@ -1,5 +1,5 @@
 """Private operations read model. No SSH keys, Docker socket or control API."""
-import concurrent.futures, datetime, hmac, json, math, os, sqlite3, threading, time
+import concurrent.futures, datetime, gzip, hmac, json, math, os, sqlite3, threading, time
 import urllib.request, urllib.error, smtplib, ssl
 from email.message import EmailMessage
 from email.utils import parseaddr
@@ -33,6 +33,7 @@ DB.execute('PRAGMA journal_mode=WAL')
 DB.executescript('''
 CREATE TABLE IF NOT EXISTS spans(id INTEGER PRIMARY KEY,service TEXT,start REAL,end REAL,state TEXT,detail TEXT,ms REAL);
 CREATE INDEX IF NOT EXISTS spans_lookup ON spans(service,start,end);
+CREATE INDEX IF NOT EXISTS spans_latest ON spans(service,id DESC);
 CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,service TEXT,time REAL,old TEXT,state TEXT,detail TEXT);
 CREATE INDEX IF NOT EXISTS events_time ON events(time DESC,id DESC);
 CREATE INDEX IF NOT EXISTS events_service_time ON events(service,time DESC,id DESC);
@@ -43,6 +44,11 @@ CREATE TABLE IF NOT EXISTS samples(service TEXT,time REAL,ms REAL);
 CREATE INDEX IF NOT EXISTS samples_lookup ON samples(service,time);
 ''')
 STATES = {'up','down','degraded','unknown','maintenance'}
+SNAPSHOT_CACHE = {}
+SNAPSHOT_CACHE_TTL = 5
+SNAPSHOT_LOCK = threading.Lock()
+HOUSEHOLD_LOCK = threading.Lock()
+HOUSEHOLD_CACHE = None
 
 def record(sid, state, detail='', ms=None, now=None):
     now = time.time() if now is None else now
@@ -109,7 +115,20 @@ def event_page(window='24h',page=1,size=15,service='',before=None):
     return {'items':[dict(zip(['id','service','time','old','state','detail'],r)) for r in rows],'total':total,'page':page,'pages':pages,'size':size,'before':end}
 
 def snapshot(window):
-    now=time.time(); seconds={'24h':86400,'7d':604800,'30d':2592000}.get(window)
+    if window not in ('24h','7d','30d','all'): raise ValueError('Invalid window')
+    # Authentication is still checked per HTTP request, before this shared read model.
+    with SNAPSHOT_LOCK:
+        with LOCK: revision=DB.total_changes
+        cached=SNAPSHOT_CACHE.get(window)
+        if cached and time.monotonic()-cached[0] < SNAPSHOT_CACHE_TTL and cached[1]==revision:
+            return cached[2]
+        payload=build_snapshot(window)
+        SNAPSHOT_CACHE[window]=(time.monotonic(),revision,payload)
+        return payload
+
+def build_snapshot(window):
+    now=time.time()
+    seconds={'24h':86400,'7d':604800,'30d':2592000}.get(window)
     with LOCK:
         first=DB.execute('SELECT MIN(start) FROM spans').fetchone()[0]
         hosts={row[0]:{'last_seen':row[1],'metrics':json.loads(row[2])} for row in DB.execute('SELECT id,time,metrics FROM hosts')}
@@ -123,7 +142,7 @@ def snapshot(window):
         detail=row[2] if state!='unknown' else ('采集已过期' if row else '尚未收到监测数据')
         with LOCK:
             began=DB.execute('SELECT MIN(start) FROM spans WHERE service=?',(sid,)).fetchone()[0]
-            latency=DB.execute('SELECT CAST(time/300 AS INTEGER)*300,AVG(ms) FROM samples WHERE service=? AND time>=? GROUP BY CAST(time/300 AS INTEGER) ORDER BY time LIMIT 400',(sid,max(start,now-86400))).fetchall()
+            latency=[]
         observed_start=max(start,began) if began is not None else now
         segments=history(sid,start,now); stats=statistics(segments,start,now)
         bars=[]; count=48 if window=='24h' else 30 if window in ('30d','all') else 28
@@ -141,13 +160,8 @@ def snapshot(window):
     for host in SERVERS.values():
         obs=hosts.get(host['id']); fresh=obs and now-obs['last_seen']<=150
         servers.append({**host,'state':'up' if fresh else 'unknown','monitoring_issue':bool(obs and not fresh),'last_seen':obs['last_seen'] if obs else None,'metrics':obs['metrics'] if fresh else {}})
-    household={}
-    for key in ['ups','ddns']:
-        try:
-            with urllib.request.urlopen(os.environ.get('OPS_HOUSEHOLD_URL','http://127.0.0.1:18181')+'/api/'+key,timeout=2) as r: household[key]=json.loads(r.read(8192))
-        except Exception: household[key]={}
     events=[e for e in events if e['service'] in SERVICES or e['service'] in SERVERS]
-    return {'generated_at':now,'window_start':start,'servers':servers,'services':result,'events':events,'household':household,'documents':REGISTRY.get('documents',[]),'downloads':REGISTRY.get('downloads',[]),
+    payload={'generated_at':now,'window_start':start,'servers':servers,'services':result,'events':events,'documents':REGISTRY.get('documents',[]),'downloads':REGISTRY.get('downloads',[]),
             'summary':{'servers':len(servers),'services':len(result),'apps':sum(s['app'] for s in result),
               'abnormal':sum(s['state'] in ('down','degraded') for s in result),
               'unknown':sum(s['state']=='unknown' for s in result),
@@ -155,6 +169,31 @@ def snapshot(window):
               'availability':round(sum(rates)/len(rates),3) if rates else None,
               'availability_services':len(rates),
               'coverage':round(sum(s['coverage'] for s in result)/max(len(result),1),2)}}
+    return payload
+
+def household_snapshot():
+    global HOUSEHOLD_CACHE
+    with HOUSEHOLD_LOCK:
+        if HOUSEHOLD_CACHE and time.monotonic()-HOUSEHOLD_CACHE[0]<10:
+            return HOUSEHOLD_CACHE[1]
+        def read(key):
+            try:
+                with urllib.request.urlopen(os.environ.get('OPS_HOUSEHOLD_URL','http://127.0.0.1:18181')+'/api/'+key,timeout=2) as response:
+                    value=json.loads(response.read(8192))
+                    return value if isinstance(value,dict) else {}
+            except Exception:return {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            values=list(pool.map(read,('ups','ddns')))
+        payload={'generated_at':time.time(),'household':dict(zip(('ups','ddns'),values))}
+        HOUSEHOLD_CACHE=(time.monotonic(),payload)
+        return payload
+
+def service_latency(service):
+    if service not in SERVICES: raise ValueError('Unknown resource')
+    now=time.time()
+    with LOCK:
+        rows=DB.execute('SELECT CAST(time/300 AS INTEGER)*300,AVG(ms) FROM samples WHERE service=? AND time>=? GROUP BY CAST(time/300 AS INTEGER) ORDER BY time LIMIT 400',(service,now-86400)).fetchall()
+    return [[bucket, round(ms,2)] for bucket,ms in rows]
 
 def notify_pending():
     filename=os.environ.get('OPS_NOTIFY')
@@ -221,11 +260,27 @@ def loop():
         notify_pending()
         time.sleep(60)
 
+def accepts_gzip(header):
+    for value in header.lower().split(','):
+        parts=[part.strip() for part in value.split(';')]
+        if parts[0]!='gzip':continue
+        quality=1.0
+        for parameter in parts[1:]:
+            if parameter.startswith('q='):
+                try:quality=float(parameter[2:])
+                except ValueError:return False
+        return 0<quality<=1
+    return False
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args): pass
     def send(self,code,obj,kind='application/json; charset=utf-8'):
         raw=obj if isinstance(obj,bytes) else json.dumps(obj,ensure_ascii=False,allow_nan=False).encode()
+        compressed=len(raw)>=1024 and accepts_gzip(self.headers.get('Accept-Encoding',''))
+        if compressed:raw=gzip.compress(raw,compresslevel=4,mtime=0)
         self.send_response(code);self.send_header('Content-Type',kind);self.send_header('Cache-Control','no-store')
+        self.send_header('Vary','Accept-Encoding')
+        if compressed:self.send_header('Content-Encoding','gzip')
         self.send_header('X-Content-Type-Options','nosniff');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw)
     def authenticated(self):
         cookie=self.headers.get('Cookie','')
@@ -244,6 +299,11 @@ class Handler(BaseHTTPRequestHandler):
             window=parse_qs(path.query).get('window',['30d'])[0]
             if window not in ['24h','7d','30d','all']:self.send(400,{});return
             self.send(200,snapshot(window))
+        elif path.path=='/service':
+            q=parse_qs(path.query);sid=q.get('service',[''])[0]
+            try:self.send(200,{'service':sid,'latency':service_latency(sid)})
+            except ValueError:self.send(400,{'error':'invalid_service'})
+        elif path.path=='/household':self.send(200,household_snapshot())
         elif path.path=='/events':
             q=parse_qs(path.query)
             try:
