@@ -9,7 +9,7 @@
     <img src="https://img.shields.io/badge/collector-Linux%20%7C%20NAS%20%7C%20macOS-555" alt="采集器平台">
     <a href="https://github.com/DongLiStudio/nest-ops/stargazers"><img src="https://img.shields.io/github/stars/DongLiStudio/nest-ops?style=flat" alt="GitHub Stars"></a>
   </p>
-  <p><a href="#快速开始">快速开始</a> · <a href="docs/deployment.md">部署指南</a> · <a href="docs/configuration.md">统计口径</a> · <a href="https://github.com/DongLiStudio/nest-ops/issues">反馈问题</a></p>
+  <p><a href="#快速开始">快速开始</a> · <a href="#界面预览">界面预览</a> · <a href="#架构与边界">架构与边界</a> · <a href="docs/deployment.md">部署指南</a> · <a href="https://github.com/DongLiStudio/nest-ops/issues">反馈问题</a></p>
 </div>
 
 ---
@@ -45,24 +45,6 @@
 
 详细的预览说明、截图口径和移动端检查见 [界面预览文档](docs/preview.md)。可运行 `python scripts/preview.py` 在本机查看服务入口、排序列表与多页事件。
 
-## Star History
-
-如果 NestOps 对你有帮助，欢迎在 GitHub 点 Star。下图由 [Star History](https://www.star-history.com/) 自动生成，会随仓库公开 Star 数变化更新；点击图表可查看交互版。
-
-<p align="center">
-  <a href="https://www.star-history.com/#DongLiStudio/nest-ops&Date"><img src="https://api.star-history.com/svg?repos=DongLiStudio/nest-ops&type=Date" alt="NestOps GitHub Star History" width="760"></a>
-</p>
-
-```text
-浏览器 → 独立 HTTPS 网关 → Homepage / NestOps 只读控制台
-                              ↑
-                HTTP 检查 + 各主机 HTTPS 采集回传
-                              ↓
-                    SQLite 历史 → 邮件告警
-```
-
-每台采集器使用独立令牌；页面数据复用 Homepage 登录会话。认证中心、共享网关和 NestOps 分开部署，更新门户不需要同时重启认证服务。架构示意不代表所有环境均已验收。
-
 ## 快速开始
 
 需要 Linux 中心服务器、Docker Engine 与 Compose v2、Python 3、可用 HTTPS 域名及证书。仓库不含私人配置。
@@ -86,6 +68,22 @@ docker compose ps
 
 详见 [部署](docs/deployment.md)、[采集器](docs/collectors.md)、[配置与统计口径](docs/configuration.md)、[升级与恢复](docs/maintenance.md)。原生 HomeTunnel 链接是可选集成，需要另外安装对应客户端。
 
+## 架构与边界
+
+```text
+浏览器 → 独立 HTTPS 网关 → Homepage / NestOps 只读控制台
+                              ↑
+                HTTP 检查 + 各主机 HTTPS 采集回传
+                              ↓
+                    SQLite 历史 → 邮件告警
+```
+
+每台采集器使用独立令牌；页面数据复用 Homepage 登录会话。认证中心、共享网关和 NestOps 分开部署，更新门户不需要同时重启认证服务。架构示意不代表所有环境均已验收。
+
+中心服务只提供观察和入口；网页重启、更新和远程命令未实现。监测开始前没有历史数据，未知不计作正常，运行状态不等同于完整业务验收。
+
+部署边界：`compose.yml` 仅包含 Homepage、console、status。`compose.gateway.yml` 管理共享 HTTPS 网关；可选 `compose.auth.yml` 单独管理 Authelia。已有认证中心时直接连接外部 OIDC，无需部署本仓库的认证示例。三组服务分别启动、停止和更新，勿把三个文件通过 `-f` 合并成一个项目。
+
 ## 验证与开发
 
 ```sh
@@ -97,21 +95,25 @@ node scripts/test_ui.cjs
 
 这些是源码、脱敏与离线回归检查；不替代实际 Docker 启动、认证、TLS、浏览器交互和通知送达验收。首次部署应按部署文档逐项检查。
 
-## 来源与许可
+## 参与贡献与交流
 
-NestOps 以 GPL-3.0 发布。内附固定版本 Homepage 源码与完整许可证，参见 [UPSTREAM.md](UPSTREAM.md)。Homepage、Authelia、Nginx、Python 及其他第三方组件各自的许可证和署名保持不变。
+欢迎通过 [Issues](https://github.com/DongLiStudio/nest-ops/issues) 报告问题或讨论功能，通过 Pull Request 提交改进。报告中请提供版本、部署方式、复现步骤和预期结果；不要上传令牌、Cookie、私有服务目录、真实服务器地址或未脱敏截图。
 
-中心服务只提供观察和入口；网页重启、更新和远程命令未实现。监测开始前没有历史数据，未知不计作正常，运行状态不等同于完整业务验收。
-
-部署边界：`compose.yml` 仅包含 Homepage、console、status。`compose.gateway.yml` 管理共享 HTTPS 网关；可选 `compose.auth.yml` 单独管理 Authelia。已有认证中心时直接连接外部 OIDC，无需部署本仓库的认证示例。三组服务分别启动、停止和更新，勿把三个文件通过 `-f` 合并成一个项目。
+提交前运行上面的验证命令；不要修改 `vendor/homepage` 的固定上游源码。部署、源码验证、浏览器验收和正式 Release 是不同状态，功能支持以文档及实际测试为准。
 
 ## 相关项目
 
 - [HomeTunnel · 家庭隧道](https://github.com/DongLiStudio/HomeTunnel)：从服务主页打开基于 SSH Agent 的私有 Web 隧道；独立安装，可选集成。
 - [Personal Agent Foundation](https://github.com/DongLiStudio/personal-agent-foundation)：可安装、迁移与恢复的个人 Agent 工作基座；不是运行 NestOps 的必要依赖。
 
-## 参与贡献与交流
+## 来源与许可
 
-欢迎通过 [Issues](https://github.com/DongLiStudio/nest-ops/issues) 报告问题或讨论功能，通过 Pull Request 提交改进。报告中请提供版本、部署方式、复现步骤和预期结果；不要上传令牌、Cookie、私有服务目录、真实服务器地址或未脱敏截图。
+NestOps 以 GPL-3.0 发布。内附固定版本 Homepage 源码与完整许可证，参见 [UPSTREAM.md](UPSTREAM.md)。Homepage、Authelia、Nginx、Python 及其他第三方组件各自的许可证和署名保持不变。
 
-提交前运行上面的验证命令；不要修改 `vendor/homepage` 的固定上游源码。部署、源码验证、浏览器验收和正式 Release 是不同状态，功能支持以文档及实际测试为准。
+## Star History
+
+如果 NestOps 对你有帮助，欢迎在 GitHub 点 Star。下图由 [Star History](https://www.star-history.com/) 自动生成，会随仓库公开 Star 数变化更新；点击图表可查看交互版。
+
+<p align="center">
+  <a href="https://www.star-history.com/#DongLiStudio/nest-ops&Date"><img src="https://api.star-history.com/svg?repos=DongLiStudio/nest-ops&type=Date" alt="NestOps GitHub Star History" width="760"></a>
+</p>
