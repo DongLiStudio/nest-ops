@@ -55,22 +55,35 @@
  const eventPages=new Map();
  function pagedEvents(service=''){
   const eventWindow=windowKey,key=eventWindow+'|'+service, state=eventPages.get(key)||{page:1,before:null};eventPages.set(key,state);
+  if(state.wrap){if(!state.pending&&Date.now()-(state.loadedAt||0)>30000)state.show(state.page,true);return state.wrap;}
   const wrap=el('section','ops-paged-events');wrap.setAttribute('aria-label','故障与恢复记录分页');
-  async function show(page){
-   wrap.setAttribute('aria-busy','true');for(const b of wrap.querySelectorAll('button'))b.disabled=true;
+  state.wrap=wrap;state.request=0;
+  async function show(page,background=false){
+   const request=++state.request;state.controller?.abort();const controller=new AbortController();state.controller=controller;state.pending=true;
+   const timeout=setTimeout(()=>controller.abort(),15000);
+   wrap.setAttribute('aria-busy','true');if(!background)for(const b of wrap.querySelectorAll('button'))b.disabled=true;
    try{
     const params=new URLSearchParams({window:eventWindow,page:String(page),service});if(state.before)params.set('before',state.before);
-    const response=await fetch('/_ops/events?'+params,{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(15000)});
+    const response=await fetch('/_ops/events?'+params,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
     if(response.status===401)throw Error('session');if(!response.ok)throw Error('request');const result=await response.json();
-    state.page=result.page;state.before=result.before;wrap.replaceChildren(eventList(result.items));
+    if(request!==state.request)return;
+    state.page=result.page;state.before=result.before;state.loadedAt=Date.now();state.result=result;wrap.replaceChildren(eventList(result.items));
     const nav=el('nav','ops-pagination');nav.setAttribute('aria-label','事件分页');
     const previous=button('上一页',()=>show(state.page-1));previous.disabled=state.page<=1;
     const next=button('下一页',()=>show(state.page+1));next.disabled=state.page>=result.pages;
     nav.append(el('span','',result.total+' 条记录 · 第 '+state.page+' / '+result.pages+' 页'),previous,next,button('查看最新',()=>{state.before=null;show(1);}));wrap.append(nav);
-   }catch(error){wrap.replaceChildren(el('p','ops-empty',error.message==='session'?'登录会话已过期，请刷新主页重新登录。':'记录加载失败，请重试。'),button('重试',()=>show(page)));}
-   finally{wrap.setAttribute('aria-busy','false');}
+   }catch(error){
+    if(request!==state.request)return;
+    if(error.message==='session'){state.result=null;wrap.replaceChildren(el('p','ops-empty','登录会话已过期，请刷新主页重新登录。'));}
+    else {const message=el('div','ops-event-error');message.setAttribute('role','status');message.append(el('span','',state.result?'更新失败，仍显示上次记录。':'记录加载失败，请重试。'),button('重试',()=>show(page)));wrap.querySelector('.ops-event-error')?.remove();if(!state.result)wrap.replaceChildren();wrap.append(message);for(const b of wrap.querySelectorAll('button'))b.disabled=b.textContent==='上一页'?state.page<=1:b.textContent==='下一页'?state.page>=(state.result?.pages??1):false;}
+   }
+   finally{clearTimeout(timeout);if(request===state.request){state.pending=false;wrap.setAttribute('aria-busy','false');}}
   }
-  wrap.append(el('p','ops-empty','正在加载记录…'));show(state.page);return wrap;
+  state.show=show;
+  const start=data.window_start??0,seed=(data.events||[]).filter(e=>(!service||e.service===service)&&e.time>=start&&(['down','degraded'].includes(e.state)||(e.state==='up'&&['down','degraded'].includes(e.old)))).sort((a,b)=>b.time-a.time||b.id-a.id).slice(0,15);
+  if(seed.length)wrap.append(eventList(seed));
+  else {const skeleton=el('div','ops-glass ops-events ops-event-skeleton');skeleton.setAttribute('aria-label','正在加载记录');for(let i=0;i<5;i++){const row=el('div','ops-event');row.setAttribute('aria-hidden','true');row.append(el('span','ops-skeleton ops-skeleton-title'));skeleton.append(row);}wrap.append(skeleton);}
+  show(state.page);return wrap;
  }
  function renderSummary(){
   summary.replaceChildren();const s=data.summary;
@@ -175,7 +188,7 @@
   if(!items.length)return;downloads.append(el('span','','隧道管理器'));
   for(const item of items){const link=el('a','',item.name);link.href=safeHref(item.href,['https:','http:']);link.rel='noopener noreferrer';downloads.append(link);}
  }
- function render(){if(!data)return;renderSummary();renderToolbar();renderBody();renderDownloads();notice.textContent='';}
+ function render(){if(!data)return;pagedEvents();renderSummary();renderToolbar();renderBody();renderDownloads();notice.textContent='';}
  let pendingRender=false;
  async function load(background=false){if(busy)return;busy=true;let preserveFocus=false;const active=document.activeElement;const focusedButton=background&&root.contains(active)&&active.tagName==='BUTTON'?{text:active.textContent,cls:active.className}:null;try{const response=await fetch('/_ops/api?window='+windowKey,{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(15000)});if(response.status===401){data=null;pendingRender=false;notice.textContent='登录会话已过期，请刷新主页重新登录。';body.replaceChildren();summary.replaceChildren();toolbar.replaceChildren();downloads.replaceChildren();return;}if(!response.ok)throw Error();data=await response.json();root.setAttribute('aria-busy','false');preserveFocus=background&&root.contains(active)&&(active.matches('input,select,[role=combobox],[role=option]')||active.classList.contains('ops-bars'));if(preserveFocus){pendingRender=true;}else{pendingRender=false;render();}}catch{root.setAttribute('aria-busy','false');if(!data){summary.replaceChildren();toolbar.replaceChildren();body.replaceChildren();body.append(el('h2','ops-section-title','暂时无法加载服务目录'),el('p','ops-empty','请检查连接后重试。'),button('重新加载',()=>{renderSkeleton();load();}));}preserveFocus=background&&root.contains(active)&&(active.matches('input,select,[role=combobox],[role=option]')||active.classList.contains('ops-bars'));notice.textContent='监测数据暂时无法加载，请稍后刷新。已有记录不代表当前状态。';if(data){data.services.forEach(s=>{s.state='unknown';s.detail='无法取得最新数据';});data.servers.forEach(s=>{s.state='unknown';s.metrics={};});data.summary.abnormal=0;data.summary.unknown=data.services.length;data.summary.availability=null;if(preserveFocus){pendingRender=true;for(const badge of root.querySelectorAll('.ops-state')){badge.className='ops-state ops-unknown';badge.textContent=labels.unknown;}for(const bar of root.querySelectorAll('.ops-bar')){bar.className='ops-bar ops-unknown';}}else{renderSummary();renderBody();}}}finally{busy=false;if(data&&!preserveFocus){renderToolbar();if(focusedButton){const restored=[...root.querySelectorAll('button')].find(b=>b.textContent===focusedButton.text&&b.className===focusedButton.cls);restored?.focus({preventScroll:true});}}}}
  function renderSkeleton(){

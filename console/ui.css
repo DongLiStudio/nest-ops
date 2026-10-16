@@ -40,5 +40,8 @@ body{background-color:#102a39!important;background-image:url('/images/alpine.jpg
 .ops-service-row>*{min-width:0}
 .ops-bars{min-width:0;max-width:100%}
 .ops-bar{min-width:0;flex:1 1 0}
+.ops-event-skeleton .ops-event{min-height:58px}
+.ops-event-skeleton .ops-skeleton-title{width:min(72%,38rem);height:14px}
+.ops-event-error{display:flex;align-items:center;gap:16px;padding:16px 0;flex-wrap:wrap}
 .ops-stat{min-width:0}
 @media(min-width:651px) and (max-width:850px){.ops-summary{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:22px}.ops-stat strong{font-size:26px}}

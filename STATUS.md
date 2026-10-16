@@ -1,5 +1,7 @@
 # Status
 
+Event panels retain their DOM and loaded records across tab changes and background refreshes. First pages are prefetched and seeded from the current authenticated snapshot; empty first loads use matching event skeleton rows. Pagination failures retain existing data, and request cancellation/sequence checks prevent late responses from overwriting the selected page. Delayed, duplicate, failed and out-of-order response regression tests cover these paths.
+
 Service lists now sort by selected-window availability, coverage and stable name/ID before pagination. Authenticated event pagination queries the retained database with time/resource filtering and a fixed browsing anchor; alerts and detail views use 15-record pages. Existing statistics and visual language are preserved. Synthetic desktop pagination and 390px viewport checks passed; production rollout and CI status must be verified separately.
 
 README now follows the HomeTunnel-style product layout with brand header, badges, quick navigation, synthetic preview, architecture, contribution guidance and related projects. No production inventory or screenshot is included.
