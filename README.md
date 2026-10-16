@@ -32,11 +32,26 @@
 - Linux/NAS Python 和 macOS Ruby 采集器；无远程命令执行接口，无中心 Docker socket。
 - 全部服务按可用率、覆盖率、名称排序后分页；故障与恢复记录支持按时间范围、服务查询和后端分页。
 
-## 工作方式
+## 界面预览
 
-![NestOps 告警与事件列表演示](docs/assets/alerts-demo.png)
+以下截图均来自本地合成数据，不含真实服务器、凭据、公网地址或监测历史；示例地址遵循 RFC 5737。点击图片可查看原图。
 
-以上为本地合成数据演示，不含真实服务器、凭据或监测历史。可运行`python scripts/preview.py`在本机查看服务入口、排序列表与多页事件。
+<p align="center">
+  <a href="docs/assets/gallery/services-demo.jpg"><img src="docs/assets/gallery/services-demo.jpg" alt="服务入口视图" width="49%"></a>
+  <a href="docs/assets/gallery/servers-demo.jpg"><img src="docs/assets/gallery/servers-demo.jpg" alt="服务器总览视图" width="49%"></a>
+  <a href="docs/assets/gallery/availability-demo.jpg"><img src="docs/assets/gallery/availability-demo.jpg" alt="可用性列表视图" width="49%"></a>
+  <a href="docs/assets/gallery/alerts-demo.jpg"><img src="docs/assets/gallery/alerts-demo.jpg" alt="告警与故障恢复记录视图" width="49%"></a>
+</p>
+
+详细的预览说明、截图口径和移动端检查见 [界面预览文档](docs/preview.md)。可运行 `python scripts/preview.py` 在本机查看服务入口、排序列表与多页事件。
+
+## Star History
+
+如果 NestOps 对你有帮助，欢迎在 GitHub 点 Star。下图由 [Star History](https://www.star-history.com/) 自动生成，会随仓库公开 Star 数变化更新；点击图表可查看交互版。
+
+<p align="center">
+  <a href="https://www.star-history.com/#DongLiStudio/nest-ops&Date"><img src="https://api.star-history.com/svg?repos=DongLiStudio/nest-ops&type=Date" alt="NestOps GitHub Star History" width="760"></a>
+</p>
 
 ```text
 浏览器 → 独立 HTTPS 网关 → Homepage / NestOps 只读控制台

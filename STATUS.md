@@ -6,6 +6,8 @@ Service lists now sort by selected-window availability, coverage and stable name
 
 README now follows the HomeTunnel-style product layout with brand header, badges, quick navigation, synthetic preview, architecture, contribution guidance and related projects. No production inventory or screenshot is included.
 
+README now includes four synthetic gallery screenshots (services, servers, availability and alerts) plus a linked Star History chart. Screenshot metadata and privacy boundaries are documented in docs/preview.md; no production inventory or credentials are included.
+
 NestOps owns Homepage, console and the optional household relay in compose.yml. Authentication and the shared gateway are separate Compose projects, with optional deployment examples in compose.auth.yml and compose.gateway.yml. Existing OIDC providers can be reused.
 
 The private deployment has been split without changing identity data, application code or UI. Public examples use an explicit external network. Source provenance and offline regression tests are validated; fresh generic installation, reboot recovery and notification inbox delivery remain environment-specific acceptance work.
