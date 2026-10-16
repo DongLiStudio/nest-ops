@@ -44,3 +44,6 @@ a:focus-visible,button:focus-visible,input:focus-visible { outline:2px solid var
 /* The background must not depend on content arriving or wrapper height. */
 html,body,#__next,#page_wrapper,#inner_wrapper { min-height:100vh; min-height:100svh; }
 #background { position:fixed !important; inset:0 !important; width:100% !important; height:100vh !important; height:100svh !important; background-size:cover !important; background-position:center !important; background-repeat:no-repeat !important; pointer-events:none; }
+
+/* Use the same outer gutter as the console when Homepage drops its container cap. */
+@media(min-width:651px) and (max-width:1228px){#information-widgets{margin-left:60px!important;margin-right:60px!important}}

@@ -35,3 +35,10 @@
 body{background-color:#102a39!important;background-image:url('/images/alpine.jpg');background-position:center;background-size:cover;background-attachment:fixed}
 #home-console[aria-busy=true] .ops-stat{min-height:88px}.ops-skeleton{display:block;background:rgba(207,233,246,.16);border-radius:7px}.ops-skeleton-value{width:66%;height:36px;margin-top:8px}.ops-skeleton-control{width:280px;height:39px}.ops-skeleton-title{height:18px;width:62%;margin-top:5px}.ops-skeleton-description{height:12px;width:82%;margin-top:12px}.ops-skeleton-card{pointer-events:none;min-height:130px}.ops-skeleton-card:after{content:'';position:absolute;left:20px;bottom:22px;width:54px;height:12px;border-radius:6px;background:rgba(207,233,246,.12)}
 #home-console[aria-busy=true] .ops-entry-grid{contain:layout style}
+
+/* Intermediate widths: preserve wide layouts while preventing intrinsic overflow. */
+.ops-service-row>*{min-width:0}
+.ops-bars{min-width:0;max-width:100%}
+.ops-bar{min-width:0;flex:1 1 0}
+.ops-stat{min-width:0}
+@media(min-width:651px) and (max-width:850px){.ops-summary{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:22px}.ops-stat strong{font-size:26px}}
