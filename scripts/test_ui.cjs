@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../console/ui.js'),'utf8');
+const body=source.split('const sortedServices=')[1].split('\n const eventPages=')[0].trim().replace(/;$/,'');
+const sort=Function('return ('+body+')')();
+const rows=[{id:'none',name:'无数据',availability:null,coverage:0},{id:'up',name:'正常',availability:100,coverage:100},{id:'a',name:'Alpha',availability:90,coverage:20},{id:'b',name:'Beta',availability:90,coverage:20},{id:'low',name:'故障',availability:30,coverage:100},{id:'covered',name:'覆盖',availability:90,coverage:80}];
+assert.deepEqual(sort(rows).map(x=>x.id),['low','a','b','covered','up','none']);
+assert.equal(rows[0].id,'none');
+assert(source.indexOf('items=sortedServices(items)')<source.indexOf('items.slice((listPage-1)*size'));
+assert(source.includes("fetch('/_ops/events?'"));
+assert(source.includes("params.set('before',state.before)"));
+console.log('PASS: service ordering, non-mutation, sort-before-page and event API wiring');

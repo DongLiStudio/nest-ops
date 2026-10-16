@@ -1,5 +1,11 @@
 # 配置与统计口径
 
+## 排序与事件分页
+
+全部已登记服务（含单台服务器列表）按所选范围可用率升序、覆盖率升序、中文名称与ID稳定排序，然后每15项分页。可用率为空的放末尾；统计展示不变。
+
+告警页和服务详情使用认证后的`/events`后端分页，每页15条、时间及ID倒序。时间范围与服务/已登记资源过滤在分页前执行，不受快照最新200条限制。首次查询固定时间锚点，翻页时新事件不会挤动已有页面；“查看最新”重置锚点。历史保留期仍为366天。
+
 runtime/console/registry.json 是服务目录唯一来源，结构见 examples/registry.json。每项 service 必须包含唯一 id、server、name、category、app、href、containers、units。app 表示业务应用，是服务的子集；href 非空才展示为可点击入口。系统自带进程不默认登记。Minecraft 等由专门面板管理的子资源无需重复登记。
 
 可选择 probe: {url, codes, label} 做 HTTP/TLS 入口检查；无 probe 的登记服务接收宿主采集。目录文件由管理员维护，不能把不可信输入作为探测 URL。units/process/timer 为本地允许的检查目标，不是远程命令字符串。

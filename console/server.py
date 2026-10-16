@@ -34,6 +34,8 @@ DB.executescript('''
 CREATE TABLE IF NOT EXISTS spans(id INTEGER PRIMARY KEY,service TEXT,start REAL,end REAL,state TEXT,detail TEXT,ms REAL);
 CREATE INDEX IF NOT EXISTS spans_lookup ON spans(service,start,end);
 CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,service TEXT,time REAL,old TEXT,state TEXT,detail TEXT);
+CREATE INDEX IF NOT EXISTS events_time ON events(time DESC,id DESC);
+CREATE INDEX IF NOT EXISTS events_service_time ON events(service,time DESC,id DESC);
 CREATE TABLE IF NOT EXISTS hosts(id TEXT PRIMARY KEY,time REAL,metrics TEXT);
 CREATE TABLE IF NOT EXISTS notices(event INTEGER PRIMARY KEY,status TEXT,attempts INTEGER,last_attempt REAL);
 CREATE TABLE IF NOT EXISTS host_health(id TEXT PRIMARY KEY,state TEXT);
@@ -88,6 +90,23 @@ def statistics(segments,start,end):
             'coverage':round(100*known/max(end-start,1),2),'known_seconds':round(known),
             'down_seconds':round(durations['down']+durations['degraded']),
             'maintenance_seconds':round(durations['maintenance'])}
+
+def event_page(window='24h',page=1,size=15,service='',before=None):
+    if window not in ('24h','7d','30d','all') or page<1 or not 1<=size<=100:raise ValueError('Invalid pagination')
+    allowed=list(SERVICES)+list(SERVERS)
+    if service and service not in allowed:raise ValueError('Unknown resource')
+    end=before if before is not None else time.time()
+    seconds={'24h':86400,'7d':604800,'30d':2592000}.get(window)
+    where=['service IN ('+','.join('?' for _ in allowed)+')','time<=?',"(state IN ('down','degraded') OR (state='up' AND old IN ('down','degraded')))" ]
+    args=allowed+[end]
+    if seconds:where.append('time>=?');args.append(end-seconds)
+    if service:where.append('service=?');args.append(service)
+    clause=' AND '.join(where)
+    with LOCK:
+        total=DB.execute('SELECT COUNT(*) FROM events WHERE '+clause,args).fetchone()[0]
+        pages=max(1,math.ceil(total/size));page=min(page,pages)
+        rows=DB.execute('SELECT id,service,time,old,state,detail FROM events WHERE '+clause+' ORDER BY time DESC,id DESC LIMIT ? OFFSET ?',args+[size,(page-1)*size]).fetchall()
+    return {'items':[dict(zip(['id','service','time','old','state','detail'],r)) for r in rows],'total':total,'page':page,'pages':pages,'size':size,'before':end}
 
 def snapshot(window):
     now=time.time(); seconds={'24h':86400,'7d':604800,'30d':2592000}.get(window)
@@ -225,6 +244,13 @@ class Handler(BaseHTTPRequestHandler):
             window=parse_qs(path.query).get('window',['30d'])[0]
             if window not in ['24h','7d','30d','all']:self.send(400,{});return
             self.send(200,snapshot(window))
+        elif path.path=='/events':
+            q=parse_qs(path.query)
+            try:
+                before=float(q['before'][0]) if 'before' in q else None
+                if before is not None and (not math.isfinite(before) or before<0 or before>time.time()+60):raise ValueError()
+                self.send(200,event_page(q.get('window',['24h'])[0],int(q.get('page',['1'])[0]),15,q.get('service',[''])[0],before))
+            except (ValueError,OverflowError):self.send(400,{'error':'invalid_pagination'})
         elif path.path in ['/ui.js','/ui.css']:
             self.send(200,(ROOT/path.path[1:]).read_bytes(),'application/javascript; charset=utf-8' if path.path.endswith('.js') else 'text/css; charset=utf-8')
         else:self.send(404,{})

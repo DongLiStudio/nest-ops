@@ -15,6 +15,7 @@ jobs:
       - run: python console/tests.py
       - run: python scripts/test_collectors.py
       - run: node --check console/ui.js && node --check homepage/custom.js
+      - run: node scripts/test_ui.cjs
       - run: |
           cp .env.example .env
           python scripts/init.py

@@ -1,5 +1,9 @@
 # Status
 
+Service lists now sort by selected-window availability, coverage and stable name/ID before pagination. Authenticated event pagination queries the retained database with time/resource filtering and a fixed browsing anchor; alerts and detail views use 15-record pages. Existing statistics and visual language are preserved. Synthetic desktop pagination and 390px viewport checks passed; production rollout and CI status must be verified separately.
+
+README now follows the HomeTunnel-style product layout with brand header, badges, quick navigation, synthetic preview, architecture, contribution guidance and related projects. No production inventory or screenshot is included.
+
 NestOps owns Homepage, console and the optional household relay in compose.yml. Authentication and the shared gateway are separate Compose projects, with optional deployment examples in compose.auth.yml and compose.gateway.yml. Existing OIDC providers can be reused.
 
 The private deployment has been split without changing identity data, application code or UI. Public examples use an explicit external network. Source provenance and offline regression tests are validated; fresh generic installation, reboot recovery and notification inbox delivery remain environment-specific acceptance work.

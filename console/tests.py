@@ -8,6 +8,25 @@ tokens=Path(tmp.name)/'tokens.json';tokens.write_text('{}');os.environ['OPS_TOKE
 spec=importlib.util.spec_from_file_location('console_server',root/'server.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 sid=next(iter(m.SERVICES))
 class HistoryTests(unittest.TestCase):
+    def test_event_pagination_beyond_200_and_stable_anchor(self):
+        now=time.time()
+        with m.DB:
+            for i in range(240):m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES(?,?,'up','down','test')",(sid,now-i))
+            m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES('retired',?,'up','down','hidden')",(now,))
+        first=m.event_page('24h',1,15)
+        self.assertEqual(first['total'],240);self.assertEqual(first['pages'],16)
+        with m.DB:m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES(?,?,'down','up','new')",(sid,first['before']+1))
+        last=m.event_page('24h',16,15,sid,first['before'])
+        self.assertEqual(last['total'],240);self.assertEqual(len(last['items']),15)
+        self.assertFalse(set(e['id'] for e in first['items']) & set(e['id'] for e in last['items']))
+        self.assertEqual(m.event_page('24h',999)['page'],16)
+    def test_event_pagination_validation_and_window(self):
+        with m.DB:m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES(?,?,'up','down','old')",(sid,time.time()-2*86400))
+        self.assertEqual(m.event_page('24h')['total'],0)
+        self.assertEqual(m.event_page('7d')['total'],1)
+        for args in [('invalid',1,15),('24h',0,15),('24h',1,101)]:
+            with self.assertRaises(ValueError):m.event_page(*args)
+        with self.assertRaises(ValueError):m.event_page(service='retired')
     def test_password_and_oidc_sessions(self):
         handler=m.Handler.__new__(m.Handler);handler.headers={'Cookie':'session=opaque'}
         for user in [{'name':'Homepage','id':'homepage'},{'email':'operator@example.com'},{'id':'opaque-subject'}]:
