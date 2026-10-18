@@ -8,6 +8,54 @@ tokens=Path(tmp.name)/'tokens.json';tokens.write_text('{}');os.environ['OPS_TOKE
 spec=importlib.util.spec_from_file_location('console_server',root/'server.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 sid=next(iter(m.SERVICES))
 class HistoryTests(unittest.TestCase):
+    def test_probe_error_is_classified_without_secret_text(self):
+        import socket,ssl
+        for error,kind in [(socket.gaierror('private.example/secret'),'dns'),(TimeoutError('secret'),'timeout'),(ssl.SSLCertVerificationError('secret'),'tls_certificate'),(ConnectionResetError('secret'),'connection_reset')]:
+            self.assertEqual(m.probe_error(m.urllib.error.URLError(error)),kind)
+    def test_probe_retry_preserves_raw_failure_without_alert(self):
+        service={'id':sid,'probe':{'url':'https://example.invalid/'}}
+        response=io.BytesIO();response.status=200
+        opener=unittest.mock.Mock();opener.open.side_effect=[TimeoutError('SECRET'),response]
+        with patch.object(m.urllib.request,'build_opener',return_value=opener),patch.object(m.time,'sleep'):
+            m.probe(service)
+        self.assertEqual(opener.open.call_count,2)
+        rows=m.DB.execute('SELECT state,kind FROM probe_attempts WHERE service=? ORDER BY id',(sid,)).fetchall()
+        self.assertEqual(rows,[('down','timeout'),('up','http')])
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM probe_notifiable').fetchone()[0],0)
+        self.assertNotIn('SECRET',str(m.DB.execute('SELECT detail FROM spans').fetchall()))
+    def test_probe_alert_after_three_cycles_and_recovery_once(self):
+        service={'id':sid};now=time.time()
+        for i in range(3):
+            m.record(sid,'down','timeout',now=now+i*60);m.probe_cycle(service,False,now+i*60)
+            self.assertEqual(m.DB.execute('SELECT count(*) FROM probe_notifiable').fetchone()[0],int(i==2))
+        m.probe_cycle(service,False,now+125)
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM probe_notifiable').fetchone()[0],1)
+        m.record(sid,'up','HTTP 200',now=now+130);m.probe_cycle(service,True,now+130)
+        m.probe_cycle(service,True,now+140)
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM probe_notifiable').fetchone()[0],2)
+    def test_probe_failure_streak_breaks_on_success_and_gap(self):
+        service={'id':sid};now=time.time()
+        m.record(sid,'down',now=now);m.probe_cycle(service,False,now)
+        m.record(sid,'up',now=now+60);m.probe_cycle(service,True,now+60)
+        m.record(sid,'down',now=now+120);m.probe_cycle(service,False,now+120)
+        m.probe_cycle(service,False,now+400)
+        self.assertEqual(m.DB.execute('SELECT failures FROM probe_alert_state WHERE service=?',(sid,)).fetchone()[0],1)
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM probe_notifiable').fetchone()[0],0)
+    def test_probe_notification_gate_and_no_orphan_recovery(self):
+        service=dict(m.SERVICES[sid],probe={'url':'https://example.invalid/'})
+        config=Path(tmp.name)/'notify-test.json'
+        config.write_text(json.dumps(dict(sender='monitor@example.invalid',recipient='owner@example.invalid',address='smtps://smtp.example.invalid:465',username='test',password='fixture')))
+        smtp=unittest.mock.MagicMock();smtp.__enter__.return_value=smtp;smtp.send_message.return_value={}
+        now=time.time()-500
+        with patch.dict(m.SERVICES,{sid:service}),patch.dict(os.environ,{'OPS_NOTIFY':str(config)}),patch.object(m.smtplib,'SMTP_SSL',return_value=smtp):
+            m.record(sid,'down',now=now);m.probe_cycle(service,False,now)
+            m.record(sid,'up',now=now+60);m.probe_cycle(service,True,now+60)
+            m.notify_pending();self.assertEqual(smtp.send_message.call_count,0)
+            for i in range(3):
+                m.record(sid,'down',now=now+120+i*60);m.probe_cycle(service,False,now+120+i*60)
+            m.notify_pending();m.notify_pending();self.assertEqual(smtp.send_message.call_count,1)
+            m.record(sid,'up',now=now+310);m.probe_cycle(service,True,now+310)
+            m.notify_pending();m.notify_pending();self.assertEqual(smtp.send_message.call_count,2)
     def test_event_pagination_beyond_200_and_stable_anchor(self):
         now=time.time()
         with m.DB:
@@ -51,6 +99,8 @@ class HistoryTests(unittest.TestCase):
             path.write_text(json.dumps(value))
             with self.assertRaises(ValueError):m.apply_private_entries(services,path)
     def setUp(self):
+        with m.LOCK,m.DB:
+            for table in ('probe_attempts','probe_alert_state','probe_notifiable'):m.DB.execute('DELETE FROM '+table)
         with m.LOCK,m.DB:m.DB.execute('DELETE FROM spans');m.DB.execute('DELETE FROM events');m.DB.execute('DELETE FROM notices')
         m.SNAPSHOT_CACHE.clear();m.HOUSEHOLD_CACHE=None
         with m.LOCK,m.DB:m.DB.execute('DELETE FROM samples')

@@ -1,6 +1,6 @@
 """Private operations read model. No SSH keys, Docker socket or control API."""
 import concurrent.futures, datetime, gzip, hmac, json, math, os, sqlite3, threading, time
-import urllib.request, urllib.error, smtplib, ssl
+import urllib.request, urllib.error, smtplib, ssl, socket
 from email.message import EmailMessage
 from email.utils import parseaddr
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS notices(event INTEGER PRIMARY KEY,status TEXT,attempt
 CREATE TABLE IF NOT EXISTS host_health(id TEXT PRIMARY KEY,state TEXT);
 CREATE TABLE IF NOT EXISTS samples(service TEXT,time REAL,ms REAL);
 CREATE INDEX IF NOT EXISTS samples_lookup ON samples(service,time);
+CREATE TABLE IF NOT EXISTS probe_attempts(id INTEGER PRIMARY KEY,service TEXT,time REAL,attempt INTEGER,state TEXT,kind TEXT,ms REAL);
+CREATE INDEX IF NOT EXISTS probe_attempts_time ON probe_attempts(time);
+CREATE TABLE IF NOT EXISTS probe_alert_state(service TEXT PRIMARY KEY,failures INTEGER,confirmed INTEGER,down_event INTEGER,last_cycle REAL);
+CREATE TABLE IF NOT EXISTS probe_notifiable(event INTEGER PRIMARY KEY);
 ''')
 STATES = {'up','down','degraded','unknown','maintenance'}
 SNAPSHOT_CACHE = {}
@@ -204,6 +208,12 @@ def notify_pending():
     with LOCK:
         rows=DB.execute("SELECT e.id,e.service,e.time,e.old,e.state,e.detail,coalesce(n.attempts,0) FROM events e LEFT JOIN notices n ON n.event=e.id WHERE (n.status IS NULL OR n.status NOT IN ('sent','skipped')) AND coalesce(n.attempts,0)<5 AND coalesce(n.last_attempt,0)<? ORDER BY e.id LIMIT 10",(time.time()-300,)).fetchall()
     for eid,sid,when,old,state,detail,attempts in rows:
+        if SERVICES.get(sid,{}).get('probe'):
+            with LOCK:
+                eligible=DB.execute('SELECT 1 FROM probe_notifiable WHERE event=?',(eid,)).fetchone()
+            if not eligible:
+                # Raw transitions remain visible, but do not page on a single failed check.
+                continue
         if sid not in SERVICES and sid not in SERVERS or state not in ('up','down','degraded') or (state=='up' and old not in ('down','degraded')):
             with LOCK,DB:DB.execute('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)',(eid,'skipped',attempts,time.time()))
             continue
@@ -230,19 +240,61 @@ def notify_pending():
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs): return None
 
+def probe_error(error):
+    reason=error.reason if isinstance(error,urllib.error.URLError) else error
+    if isinstance(reason,ssl.SSLCertVerificationError):return 'tls_certificate'
+    if isinstance(reason,ssl.SSLError):return 'tls_handshake'
+    if isinstance(reason,socket.gaierror):return 'dns'
+    if isinstance(reason,(TimeoutError,socket.timeout)):return 'timeout'
+    if isinstance(reason,ConnectionRefusedError):return 'connection_refused'
+    if isinstance(reason,ConnectionResetError):return 'connection_reset'
+    return 'connection_error'
+
+def probe_cycle(service,success,now=None):
+    """Notification hysteresis only; never rewrite raw history/statistics."""
+    sid=service['id'];now=time.time() if now is None else now
+    with LOCK,DB:
+        previous=DB.execute('SELECT failures,confirmed,down_event,last_cycle FROM probe_alert_state WHERE service=?',(sid,)).fetchone()
+        failures,confirmed,down_event,last=previous or (0,0,None,now)
+        if not confirmed and now-last>150:failures=0;down_event=None
+        event=DB.execute('SELECT id,state FROM events WHERE service=? ORDER BY id DESC LIMIT 1',(sid,)).fetchone()
+        if success:
+            if confirmed and event and event[1]=='up':
+                DB.execute('INSERT OR IGNORE INTO probe_notifiable VALUES(?)',(event[0],))
+            failures=0;confirmed=0;down_event=None
+        else:
+            if not failures and event and event[1]=='down':down_event=event[0]
+            failures+=1
+            if failures>=3 and not confirmed and down_event is not None:
+                DB.execute('INSERT OR IGNORE INTO probe_notifiable VALUES(?)',(down_event,))
+                confirmed=1
+        DB.execute('INSERT OR REPLACE INTO probe_alert_state VALUES(?,?,?,?,?)',(sid,failures,confirmed,down_event,now))
+        # Permanently suppress unconfirmed raw transitions, avoiding queue starvation.
+        DB.execute("INSERT OR IGNORE INTO notices SELECT e.id,'skipped',0,? FROM events e WHERE e.service=? AND e.id NOT IN (SELECT event FROM probe_notifiable)",(now,sid))
+        if confirmed and down_event is not None:
+            DB.execute("DELETE FROM notices WHERE event=? AND status='skipped'",(down_event,))
+
 def probe(service):
     p=service.get('probe')
     if not p: return
-    started=time.monotonic()
-    try:
-        request=urllib.request.Request(p['url'],headers={'User-Agent':'HomeConsole/1.0'})
+    success=False
+    for attempt in range(1,3):
+        started=time.monotonic();kind='http'
         try:
-            with urllib.request.build_opener(NoRedirect).open(request,timeout=6) as response: code=response.status
-        except urllib.error.HTTPError as e: code=e.code
-        ok=code in p.get('codes',[200])
-        record(service['id'],'up' if ok else 'down',f'HTTP {code} · {p.get("label","入口检查")}',round((time.monotonic()-started)*1000))
-    except Exception:
-        record(service['id'],'down','入口连接或 TLS 检查失败')
+            request=urllib.request.Request(p['url'],headers={'User-Agent':'HomeConsole/1.0'})
+            try:
+                with urllib.request.build_opener(NoRedirect).open(request,timeout=6) as response:code=response.status
+            except urllib.error.HTTPError as error:code=error.code
+            success=code in p.get('codes',[200]);detail=f'HTTP {code}'
+        except Exception as error:
+            kind=probe_error(error);detail='入口检查失败 · '+kind
+        elapsed=round((time.monotonic()-started)*1000);now=time.time()
+        # No URL, exception text, credentials, headers or private path is persisted.
+        with LOCK,DB:DB.execute('INSERT INTO probe_attempts(service,time,attempt,state,kind,ms) VALUES(?,?,?,?,?,?)',(service['id'],now,attempt,'up' if success else 'down',kind,elapsed))
+        record(service['id'],'up' if success else 'down',detail+f' · attempt {attempt}/2 · {elapsed}ms',elapsed,now)
+        if success:break
+        if attempt<2:time.sleep(1)
+    probe_cycle(service,success)
 
 def loop():
     while True:
@@ -256,7 +308,9 @@ def loop():
                 DB.execute('INSERT OR REPLACE INTO host_health VALUES(?,?)',(host,state))
             DB.execute('DELETE FROM spans WHERE end<?',(time.time()-366*86400,))
             DB.execute('DELETE FROM events WHERE time<?',(time.time()-366*86400,))
+            DB.execute('DELETE FROM probe_notifiable WHERE event NOT IN (SELECT id FROM events)')
             DB.execute('DELETE FROM samples WHERE time<?',(time.time()-31*86400,))
+            DB.execute('DELETE FROM probe_attempts WHERE time<?',(time.time()-31*86400,))
         notify_pending()
         time.sleep(60)
 
