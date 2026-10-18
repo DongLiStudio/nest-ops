@@ -14,6 +14,21 @@ REGISTRY = json.loads(Path(os.environ.get('OPS_REGISTRY', str(ROOT / 'registry.j
 SERVICES = {s['id']: s for s in REGISTRY['services']}
 SERVERS = {s['id']: s for s in REGISTRY['servers']}
 
+def qualify_service_names(services, servers):
+    """Disambiguate shared admin tools and cross-host duplicate service names."""
+    names = {}
+    for service in services.values():
+        names.setdefault(service['name'].strip().casefold(), set()).add(service['server'])
+    tools = {'1panel', 'clash', 'clash 代理后台', 'clash 代理内核', 'allinssl', '宝塔', '宝塔面板'}
+    for service in services.values():
+        name = service['name'].strip()
+        key = name.casefold()
+        host = servers.get(service['server'], {}).get('name', service['server'])
+        if (key in tools or len(names[key]) > 1) and not name.endswith(' · ' + host):
+            service['name'] = name + ' · ' + host
+
+qualify_service_names(SERVICES, SERVERS)
+
 def apply_private_entries(services, filename):
     """Keep private entry suffixes out of Git and expose them only behind auth."""
     if not filename: return

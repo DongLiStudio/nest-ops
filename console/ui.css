@@ -27,7 +27,7 @@
 .ops-select-menu::-webkit-scrollbar{width:6px}.ops-select-menu::-webkit-scrollbar-thumb{background:#c7e6f54d;border-radius:6px}
 @media(prefers-reduced-motion:reduce){.ops-tab-indicator,.ops-entry{transition:none}}
 
-.ops-select-menu{max-height:min(440px,60vh);scrollbar-width:thin;scrollbar-color:#c7e6f53d transparent;overflow-x:hidden;overscroll-behavior:contain}.ops-select-menu::-webkit-scrollbar-track{background:transparent}.ops-select-menu::-webkit-scrollbar-thumb{border:2px solid transparent;background-clip:padding-box;background-color:#c7e6f53d}.ops-select-menu::-webkit-scrollbar{width:7px}.ops-select-option{padding:9px 12px}
+.ops-select-menu{max-height:min(480px,70vh);max-height:min(480px,70dvh);scrollbar-width:thin;scrollbar-color:#c7e6f53d transparent;overflow-x:hidden;overscroll-behavior:contain}.ops-select-menu::-webkit-scrollbar-track{background:transparent}.ops-select-menu::-webkit-scrollbar-thumb{border:2px solid transparent;background-clip:padding-box;background-color:#c7e6f53d}.ops-select-menu::-webkit-scrollbar{width:7px}.ops-select-option{padding:9px 12px}
 .ops-stat-warning strong{color:var(--ops-yellow)}.ops-stat-critical strong{color:var(--ops-red)}
 .ops-pagination{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:16px;flex-wrap:wrap;color:var(--ops-muted);font-size:12px}.ops-pagination>span{margin-right:auto}.ops-pagination button:disabled{cursor:default}.ops-paged-list{scroll-margin-top:20px}
 

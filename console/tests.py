@@ -8,6 +8,19 @@ tokens=Path(tmp.name)/'tokens.json';tokens.write_text('{}');os.environ['OPS_TOKE
 spec=importlib.util.spec_from_file_location('console_server',root/'server.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 sid=next(iter(m.SERVICES))
 class HistoryTests(unittest.TestCase):
+    def test_service_names_include_host_for_shared_tools_and_duplicates(self):
+        hosts={'a':{'name':'Example A'},'b':{'name':'Example B'}}
+        services={str(i):{'name':name,'server':host} for i,(name,host) in enumerate([
+            ('1Panel','a'),('1Panel','b'),('Clash','a'),('Portal','a'),('Portal','b'),
+            ('Unique App','a'),('Clash · Example A','a')])}
+        m.qualify_service_names(services,hosts)
+        self.assertEqual([s['name'] for s in services.values()],[
+            '1Panel · Example A','1Panel · Example B','Clash · Example A',
+            'Portal · Example A','Portal · Example B','Unique App','Clash · Example A'])
+        before=json.dumps(services)
+        m.qualify_service_names(services,hosts)
+        self.assertEqual(json.dumps(services),before)
+
     def test_probe_error_is_classified_without_secret_text(self):
         import socket,ssl
         for error,kind in [(socket.gaierror('private.example/secret'),'dns'),(TimeoutError('secret'),'timeout'),(ssl.SSLCertVerificationError('secret'),'tls_certificate'),(ConnectionResetError('secret'),'connection_reset')]:
