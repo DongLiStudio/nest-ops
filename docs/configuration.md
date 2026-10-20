@@ -12,7 +12,7 @@
 
 runtime/console/registry.json 是服务目录唯一来源，结构见 examples/registry.json。每项 service 必须包含唯一 id、server、name、category、app、href、containers、units。app 表示业务应用，是服务的子集；href 非空才展示为可点击入口。系统自带进程不默认登记。Minecraft 等由专门面板管理的子资源无需重复登记。
 
-可选择 probe: {url, codes, label} 做 HTTP/TLS 入口检查；无 probe 的登记服务接收宿主采集。目录文件由管理员维护，不能把不可信输入作为探测 URL。units/process/timer 为本地允许的检查目标，不是远程命令字符串。
+可选择 probe: {url, codes, label} 做 HTTP/TLS 入口检查；无 probe 的登记服务接收宿主采集。目录文件由管理员维护，不能把不可信输入作为探测 URL。units/process/timer/backup_job 为本地允许的检查目标，不是远程命令字符串。
 
 私有入口后缀放 runtime/console/entries.json，映射 service id 到完整 http/https/hometunnel URL，仅认证接口返回。不要把管理路径或 HomeTunnel 主机指纹提交到公开仓库。
 
@@ -21,6 +21,43 @@ runtime/console/registry.json 是服务目录唯一来源，结构见 examples/r
 历史数据在 runtime/history/history.sqlite；服务身份变化会形成新序列，应保持稳定 id。采集超过 150 秒过期为未知，主机采集失联不等于确认整机停机。
 
 SMTP 可选：复制 examples/notify.json 到 runtime/console/notify.json、填写真实凭据，将 enabled 改为 true 后重启 console（Compose 已挂载 OPS_NOTIFY）。默认关闭通知，避免示例安装误发。恢复通知仅对确实故障后恢复的事件生成。
+
+## 定时备份监测
+
+Linux/NAS 的服务项可设置以下字段；`containers`、`units` 留空，不设置 `probe`。业务目录仍可使用 `app: false` 与 `href: ""`，只显示内部监测项。
+
+```json
+{
+  "backup_job": {
+    "timer": "example-backup.timer",
+    "service": "example-backup.service",
+    "receipt": "/var/lib/example-backup/last-success.json",
+    "max_age_seconds": 93600
+  }
+}
+```
+
+`max_age_seconds` 默认为 93600 秒（26 小时），可设为其他正数以匹配实际调度与执行预算。`receipt` 是任务在备份、校验和必要收尾全部成功后原子更新的持久 JSON 文件，不应放在重启会清空的临时目录。采集器只读取它：
+
+```json
+{
+  "profile": "demo-1",
+  "snapshot": "example-snapshot",
+  "checked": true,
+  "utc": "2026-01-01T02:15:00+00:00"
+}
+```
+
+回执必须是 JSON 对象，`checked` 严格为 `true`，`profile` 与采集配置的 `server` 完全一致，`snapshot` 是非空字符串，`utc` 是带 UTC 时区的有效 ISO 时间（`+00:00` 或 `Z`）。采集器不会访问仓库验证快照，回执应由受信任的本机备份任务维护。
+
+- 定时器必须 `active` 且 `enabled`（含 `enabled-runtime`）；停用、停止或失败显示 `down`。
+- service 最近一次明确执行失败显示 `down`，即使仍有旧成功回执；正常等待中的 `inactive` 不算故障。正在运行或重试时依回执判断，避免把保留的上次失败结果当作本次失败。
+- 有效且未过期的回执显示 `up`，超过期限显示 `degraded`。宿主重启后 systemd 的执行时间归零不抹去持久成功证据。
+- 回执缺失、损坏、字段不符、时间无时区或非 UTC、时间超前超过 300 秒显示 `unknown`；systemd 查询失败或缺少必要属性也显示 `unknown`。已明确的停用或失败优先显示 `down`。
+
+service 的 `Result`/`ExecMainStatus` 是 systemd 的当前观测，宿主重启后可能重置。此时只能结合仍保留的成功回执及其时效判断，重启前较新的失败可能无法重建；本监测不持久化最近失败，也不会写回备份任务的状态文件。`up` 不能证明最近一次失败跨重启仍可追溯。
+
+这些状态表示定时任务和成功回执的观测结果；实际恢复与异地副本需要独立验收。已有 `timer` 字段保持原有“读取 service 最近执行结果”的行为，不自动升级为 `backup_job`。
 
 ## HTTP 探测重试与告警防抖
 

@@ -4,9 +4,27 @@
 
 ## Linux 与 NAS
 
-需要 Python 3、systemd，Docker 检查需要读取本机 Docker 状态的权限。安装命令：sudo sh collectors/linux/install.sh /绝对路径/config.json。检查 systemctl status nestops-collector。卸载 sudo sh collectors/linux/uninstall.sh；保留私有配置，需要在中心撤销令牌，再按自己的数据清理策略删除配置。
+需要 Python 3.7 或更新版本、systemd，Docker 检查需要读取本机 Docker 状态的权限。安装命令：sudo sh collectors/linux/install.sh /绝对路径/config.json。检查 systemctl status nestops-collector。卸载 sudo sh collectors/linux/uninstall.sh；保留私有配置，需要在中心撤销令牌，再按自己的数据清理策略删除配置。
 
 采集器默认 root，因为 Docker 状态读取通常需要该权限；它没有接收命令的端口，只运行配置中允许的本地检查。用户可以自行使用已有最小权限账号，不能把 docker 组当作低权限边界。NAS 非 systemd 或安全标签不同的系统需要适配其原生任务机制，不自动取消系统安全限制。
+
+### 指定 Docker 程序路径
+
+systemd 服务的 PATH 可能与交互终端不同。Linux/NAS 可在本机私有采集配置（config.json）的顶层增量设置：
+
+```json
+{
+  "docker_binary": "/opt/example/bin/docker"
+}
+```
+
+该值必须是管理员信任的本地绝对路径，目标须为存在且可执行的文件；采集器使用参数数组直接调用，不通过 shell，也不接受命令参数字符串。显式路径缺失、不可访问、不可执行或 Docker 查询失败时，容器监测显示 `unknown`，不会回退到其他 Docker。未设置时保留 PATH 搜索及原有默认路径检查。该宿主级字段不由目录生成器自动设置，不应把真实 NAS 安装路径写进公开示例。
+
+### 定时备份任务
+
+Linux/NAS 可使用 `backup_job` 观察 systemd 定时备份与持久成功回执。只读取本机状态和指定 JSON 文件，不执行备份、恢复或仓库查询，不读取备份密码。不要把每日 oneshot service 加入 `units`，正常等待时的 `inactive` 不代表备份故障。配置和回执格式见 [配置说明](configuration.md#定时备份监测)。
+
+更新现有采集器时保留原令牌，增量同步这项配置和采集脚本；不要为新增监测项重新生成或轮换整台宿主的令牌。macOS 采集器暂不支持 `backup_job`。
 
 ## macOS
 

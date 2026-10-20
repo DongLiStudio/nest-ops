@@ -13,7 +13,7 @@ if not host.replace('-','').replace('_','').isalnum():raise SystemExit('Server i
 target=ROOT/'runtime/console/tokens.json';tokens=json.loads(target.read_text(encoding='utf-8'))
 if host in tokens:raise SystemExit('Token exists; revoke and rotate explicitly')
 token=secrets.token_urlsafe(48);tokens[host]=token
-services=[{k:v for k,v in s.items() if k in ('id','containers','units','timer','process')} for s in registry['services'] if s['server']==host and not s.get('probe')]
+services=[{k:v for k,v in s.items() if k in ('id','containers','units','timer','process','backup_job')} for s in registry['services'] if s['server']==host and not s.get('probe')]
 old=os.umask(0o077)
 try:
     output=ROOT/'runtime'/f'collector-{host}.json'

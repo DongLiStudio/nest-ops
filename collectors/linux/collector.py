@@ -1,13 +1,92 @@
 """Allowlisted local checks, outbound HTTPS only; no remote command API."""
-import json,os,shutil,subprocess,time,urllib.request
+import json,math,os,shutil,subprocess,time,urllib.request
+from datetime import datetime,timedelta
 from pathlib import Path
 
 def run(args):
     try:return subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,timeout=8)
     except (OSError,subprocess.TimeoutExpired):return None
 
+def systemd_properties(unit, properties):
+    check = run(['systemctl', 'show', unit] +
+                ['--property=' + name for name in properties])
+    if not check or check.returncode != 0:
+        return None
+    return dict(line.split('=', 1) for line in check.stdout.splitlines() if '=' in line)
+
+
+def backup_job_state(job, server):
+    """Observe a scheduled job and its durable receipt without executing it."""
+    if not isinstance(job, dict) or not isinstance(server, str) or not server.strip():
+        return 'unknown'
+    for key in ('timer', 'service', 'receipt'):
+        if not isinstance(job.get(key), str) or not job[key].strip():
+            return 'unknown'
+    max_age = job.get('max_age_seconds', 93600)
+    if (isinstance(max_age, bool) or not isinstance(max_age, (int, float)) or max_age <= 0):
+        return 'unknown'
+    try:
+        if not math.isfinite(max_age):
+            return 'unknown'
+    except OverflowError:
+        return 'unknown'
+    timer = systemd_properties(job['timer'], ('ActiveState', 'UnitFileState'))
+    if timer is None or not timer.get('ActiveState') or not timer.get('UnitFileState'):
+        return 'unknown'
+    if (timer['ActiveState'] != 'active' or
+            timer['UnitFileState'] not in ('enabled', 'enabled-runtime')):
+        return 'down'
+    service = systemd_properties(job['service'], ('ActiveState', 'Result', 'ExecMainStatus'))
+    if service is None:
+        return 'unknown'
+    active = service.get('ActiveState')
+    if active == 'failed':
+        return 'down'
+    if active == 'inactive':
+        if not service.get('Result') or not service.get('ExecMainStatus'):
+            return 'unknown'
+        if service['Result'] != 'success' or service['ExecMainStatus'] != '0':
+            return 'down'
+    elif active not in ('active', 'activating', 'deactivating', 'reloading'):
+        return 'unknown'
+    # A running retry can retain the previous failure result until it exits.
+    # On reboot systemd may forget the last exit, so rely on a persistent receipt.
+    try:
+        receipt = json.loads(Path(job['receipt']).read_text(encoding='utf-8'))
+        if (not isinstance(receipt, dict) or receipt.get('checked') is not True or
+                receipt.get('profile') != server or
+                not isinstance(receipt.get('snapshot'), str) or not receipt['snapshot'].strip() or
+                not isinstance(receipt.get('utc'), str)):
+            return 'unknown'
+        stamp = receipt['utc']
+        completed = datetime.fromisoformat(stamp[:-1] + '+00:00' if stamp.endswith('Z') else stamp)
+        if completed.utcoffset() != timedelta(0):
+            return 'unknown'
+        age = time.time() - completed.timestamp()
+    except (OSError, UnicodeError, ValueError, TypeError, OverflowError):
+        return 'unknown'
+    if age < -300:
+        return 'unknown'
+    return 'degraded' if age > max_age else 'up'
+
+
+def docker_command(config):
+    if 'docker_binary' not in config:
+        return shutil.which('docker') or ('/usr/local/bin/docker' if Path('/usr/local/bin/docker').exists() else None)
+    binary = config['docker_binary']
+    if not isinstance(binary, str) or not binary or chr(0) in binary:
+        return None
+    try:
+        target = Path(binary)
+        if target.is_absolute() and target.is_file() and os.access(binary, os.X_OK):
+            return binary
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 def collect(config):
-    docker=shutil.which('docker') or ('/usr/local/bin/docker' if Path('/usr/local/bin/docker').exists() else None)
+    docker=docker_command(config)
     states={}; result={}
     if docker:
         p=run([docker,'ps','-a','--format','{{.Names}}|{{.State}}|{{.Status}}'])
@@ -24,6 +103,8 @@ def collect(config):
             for unit in units:
                 check=run(['systemctl','is-active',unit]); values.append('up' if check and check.returncode==0 else 'down' if check and check.stdout.strip() in ['inactive','failed','unknown'] else 'unknown')
             state='down' if 'down' in values else 'unknown' if 'unknown' in values else 'up'
+        elif 'backup_job' in service:
+            state=backup_job_state(service['backup_job'],config.get('server'))
         elif service.get('timer'):
             check=run(['systemctl','show',service['timer'],'--property=Result','--property=ExecMainStatus','--property=ExecMainExitTimestampMonotonic'])
             if check and check.returncode==0:
