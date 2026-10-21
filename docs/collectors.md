@@ -22,7 +22,7 @@ systemd 服务的 PATH 可能与交互终端不同。Linux/NAS 可在本机私�
 
 ### 定时备份任务
 
-Linux/NAS 可使用 `backup_job` 观察 systemd 定时备份与持久成功回执。只读取本机状态和指定 JSON 文件，不执行备份、恢复或仓库查询，不读取备份密码。不要把每日 oneshot service 加入 `units`，正常等待时的 `inactive` 不代表备份故障。配置和回执格式见 [配置说明](configuration.md#定时备份监测)。
+Linux/NAS 可使用 `backup_job` 观察 systemd 定时备份，或通过显式 `scheduler: "backrest"` 观察本机 Backrest 计划、真实备份操作和持久完整检查回执。只读取本机 systemd 状态、配置及只读操作历史，不执行备份、恢复或仓库查询，不读取备份密码。不要把每日 oneshot service 加入 `units`，正常等待时的 `inactive` 不代表备份故障。配置和回执格式见 [配置说明](configuration.md#定时备份监测)。
 
 更新现有采集器时保留原令牌，增量同步这项配置和采集脚本；不要为新增监测项重新生成或轮换整台宿主的令牌。macOS 采集器暂不支持 `backup_job`。
 

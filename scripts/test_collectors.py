@@ -1,4 +1,5 @@
-import contextlib,importlib.util,io,json,runpy,shutil,sys,tempfile,unittest
+import contextlib,hashlib,importlib.util,io,json,runpy,shutil,sqlite3,sys,tempfile,unittest
+from contextlib import closing
 from datetime import datetime,timezone
 from subprocess import CompletedProcess
 from pathlib import Path
@@ -262,6 +263,158 @@ class CollectorConfigurationTests(unittest.TestCase):
             config = json.loads((root / 'runtime/collector-demo-1.json').read_text())
             self.assertEqual(config['services'], [{'id': 'demo-1:backup', 'backup_job': job}])
             self.assertEqual(config['server'], 'demo-1')
+
+
+class BackrestMonitorTests(unittest.TestCase):
+    NOW = 1792569600
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.job = {'scheduler': 'backrest', 'service': 'example-backrest.service',
+                    'config': str(self.root/'config.json'), 'oplog': str(self.root/'oplog.sqlite'),
+                    'plan': 'example-daily', 'receipt': str(self.root/'last-success.json')}
+        self.config = {'instance': 'demo-1', 'repos': [{'id': 'site', 'guid': 'guid-1'}],
+                       'plans': [{'id': 'example-daily', 'repo': 'site',
+                                  'schedule': {'cron': '15 2 * * *'}}]}
+        self.write_config()
+        self.write_receipt()
+        with closing(sqlite3.connect(self.job['oplog'])) as db:
+            db.executescript('''
+                CREATE TABLE operation_groups (ogid INTEGER,instance_id TEXT,
+                    plan_id TEXT,repo_guid TEXT,original_instance_keyid TEXT);
+                CREATE TABLE operations (id INTEGER,ogid INTEGER,status INTEGER,
+                    snapshot_id TEXT,start_time_ms INTEGER,operation BLOB);
+                INSERT INTO operation_groups VALUES(1,'demo-1','example-daily','guid-1','');
+                INSERT INTO operation_groups VALUES(2,'other','example-daily','guid-1','remote');
+            ''')
+        self.add_operation(1, status=3)
+        self.service = {'ActiveState': 'active', 'UnitFileState': 'enabled'}
+
+    def write_config(self):
+        Path(self.job['config']).write_text(json.dumps(self.config), encoding='utf-8')
+
+    def write_receipt(self, age=30, **changes):
+        receipt = {'profile': 'demo-1', 'snapshot': 'snapshot-1', 'checked': True,
+                   'utc': datetime.fromtimestamp(self.NOW-age, timezone.utc).isoformat()}
+        receipt.update(changes)
+        Path(self.job['receipt']).write_text(json.dumps(receipt), encoding='utf-8')
+
+    def add_operation(self, ident, status, blob=b'\xa2\x06\x00', group=1, snapshot='snapshot-1'):
+        with closing(sqlite3.connect(self.job['oplog'])) as db:
+            db.execute('INSERT INTO operations VALUES (?,?,?,?,?,?)',
+                       (ident, group, status, snapshot, (self.NOW-120+ident)*1000, blob))
+            db.commit()
+
+    def state(self):
+        with patch.object(m, 'systemd_properties', return_value=self.service), \
+                patch.object(m.time, 'time', return_value=self.NOW):
+            return m.backrest_job_state(self.job, 'demo-1')
+
+    def test_true_backup_and_matching_full_check_receipt_is_up(self):
+        before = hashlib.sha256(Path(self.job['oplog']).read_bytes()).digest()
+        self.assertEqual(self.state(), 'up')
+        self.assertEqual(hashlib.sha256(Path(self.job['oplog']).read_bytes()).digest(), before)
+
+    def test_latest_real_failure_overrides_fresh_success(self):
+        for status in (4, 5, 6):
+            self.add_operation(2+status, status)
+            self.assertEqual(self.state(), 'down')
+
+    def test_hook_success_cannot_mask_failed_backup(self):
+        self.add_operation(2, 4)
+        self.add_operation(3, 3, b'\xd2\x06\x00')
+        self.assertEqual(self.state(), 'down')
+
+    def test_remote_import_and_pending_do_not_override_local_execution(self):
+        self.add_operation(2, 4, group=2)
+        self.add_operation(3, 1)
+        self.assertEqual(self.state(), 'up')
+
+    def test_dry_run_success_or_failure_does_not_replace_real_backup(self):
+        for status in (3, 4):
+            with self.subTest(status=status):
+                self.add_operation(2 + status, status, b'\xa2\x06\x02\x28\x01', snapshot='')
+                self.assertEqual(self.state(), 'up')
+
+    def test_dry_run_alone_is_unknown(self):
+        with closing(sqlite3.connect(self.job['oplog'])) as db:
+            db.execute('DELETE FROM operations')
+            db.commit()
+        self.add_operation(2, 3, b'\xa2\x06\x02\x28\x01')
+        self.assertEqual(self.state(), 'unknown')
+
+    def test_dry_run_cannot_mask_real_backup_failure(self):
+        self.add_operation(2, 4)
+        self.add_operation(3, 3, b'\xa2\x06\x02\x28\x01')
+        self.assertEqual(self.state(), 'down')
+
+    def test_running_backup_preserves_last_checked_copy(self):
+        self.add_operation(2, 2, snapshot='')
+        self.assertEqual(self.state(), 'up')
+
+    def test_service_disabled_or_stopped_is_down(self):
+        for active, enabled in [('inactive', 'enabled'), ('active', 'disabled')]:
+            self.service.update(ActiveState=active, UnitFileState=enabled)
+            self.assertEqual(self.state(), 'down')
+
+    def test_disabled_plan_even_false_oneof_is_down(self):
+        for value in (True, False):
+            self.config['plans'][0]['schedule'] = {'disabled': value}
+            self.write_config()
+            self.assertEqual(self.state(), 'down')
+
+    def test_wrong_host_and_missing_plan_are_unknown(self):
+        self.config['instance'] = 'other'
+        self.write_config()
+        self.assertEqual(self.state(), 'unknown')
+        self.config['instance'] = 'demo-1'
+        self.config['plans'] = []
+        self.write_config()
+        self.assertEqual(self.state(), 'unknown')
+
+    def test_full_check_required_for_same_latest_snapshot(self):
+        for changes in ({'snapshot': 'old'}, {'checked': False}, {'checked': 1},
+                        {'profile': 'other'}):
+            self.write_receipt(**changes)
+            self.assertEqual(self.state(), 'unknown')
+
+    def test_expired_copy_is_degraded_future_unknown(self):
+        with closing(sqlite3.connect(self.job['oplog'])) as db:
+            db.execute('UPDATE operations SET start_time_ms=?', ((self.NOW-94000)*1000,))
+            db.commit()
+        self.write_receipt(age=93601)
+        self.assertEqual(self.state(), 'degraded')
+        self.write_receipt(age=-301)
+        self.assertEqual(self.state(), 'unknown')
+
+    def test_warning_is_degraded_even_fresh_old_success(self):
+        self.add_operation(2, 7)
+        self.assertEqual(self.state(), 'degraded')
+
+    def test_broken_history_is_unknown(self):
+        self.add_operation(2, 3, b'\xa2\x06\x80')
+        self.assertEqual(self.state(), 'unknown')
+        Path(self.job['oplog']).write_bytes(b'not sqlite')
+        self.assertEqual(self.state(), 'unknown')
+
+    def test_proto_parser_skips_scalars_and_requires_backup_kind(self):
+        self.assertEqual(m._backrest_operation_kind(b'\x08\x01\xa2\x06\x00'), 100)
+        self.assertEqual(m._backrest_operation_kind(b'\xd2\x06\x00'), 106)
+        self.assertEqual(m._backrest_operation_kind(b'\xa2\x06\x02\x28\x00'), 100)
+        self.assertIsNone(m._backrest_operation_kind(b'\xa2\x06\x02\x28\x01'))
+        for blob in (b'\x00', b'\xff', b'\xa2\x06\x03\x00', b'\xa2\x06\x01\x28'):
+            with self.assertRaises(ValueError):
+                m._backrest_operation_kind(blob)
+
+    def test_backrest_dispatch_preserves_existing_collector_contract(self):
+        with patch.object(m, 'systemd_properties', return_value=self.service), \
+                patch.object(m.time, 'time', return_value=self.NOW), \
+                patch.object(m, 'docker_command', return_value=None):
+            result = m.collect({'server': 'demo-1', 'services': [
+                {'id': 'demo-1:backup', 'backup_job': self.job}]})
+        self.assertEqual(result['services']['demo-1:backup']['state'], 'up')
 
 
 if __name__=='__main__':unittest.main()

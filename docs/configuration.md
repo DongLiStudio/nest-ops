@@ -59,6 +59,33 @@ service 的 `Result`/`ExecMainStatus` 是 systemd 的当前观测，宿主重启
 
 这些状态表示定时任务和成功回执的观测结果；实际恢复与异地副本需要独立验收。已有 `timer` 字段保持原有“读取 service 最近执行结果”的行为，不自动升级为 `backup_job`。
 
+### 本机 Backrest 计划
+
+使用本机 Backrest 执行备份时，可显式设置 `scheduler: "backrest"`。以下为配置示例；路径和计划ID须按本机现行配置填写，`server` 必须与 Backrest 的 `instance` 一致。
+
+```json
+{
+  "backup_job": {
+    "scheduler": "backrest",
+    "service": "example-backrest.service",
+    "config": "/opt/example-backrest/config/config.json",
+    "oplog": "/var/lib/example-backrest/oplog.sqlite",
+    "plan": "example-daily",
+    "receipt": "/var/lib/example-backup/last-success.json",
+    "max_age_seconds": 93600
+  }
+}
+```
+
+该适配按 Backrest v1.14.1 的配置和 SQLite 操作历史格式验证；升级 Backrest 后应先复验格式。采集器以只读方式打开操作历史，仅接受当前本机实例、指定计划和仓库 GUID 的真实 `OperationBackup`。远端同步记录、索引、钩子、待执行操作和 dry run 都不能作为成功备份证据。
+
+- Backrest service 必须活动且已启用；计划必须有启用的 cron 日程，停用服务或计划显示 `down`。
+- 最新真实备份失败或取消显示 `down`，警告显示 `degraded`，不会被较新的索引、钩子或 dry run 掩盖。执行中的备份仍依据此前最后一份已完成备份及其完整检查回执判断。
+- `up` 必须同时满足真实备份成功、上述回执格式有效、回执快照与该次操作完全一致且未过期；过期显示 `degraded`，缺失/损坏配置、数据库、操作或回执及身份不符显示 `unknown`。
+- 回执由受信任的备份任务在完整检查和收尾成功后维护。Backrest 操作成功本身不代表已经完成仓库完整检查；此适配不会执行检查或写入 Backrest 数据库，也不需要 API 登录密码。
+
+未设置该 scheduler 的现有 systemd 定时器监测保持原行为。中心 Backrest 的界面汇总及远端状态同步应另行验收，不能用本机 service 活动代替。
+
 ## HTTP 探测重试与告警防抖
 
 每轮入口探测最多两次，单次超时6秒，失败间隔1秒后重试；成功立即停止重试。连续三轮（包含重试）全部失败，才允许该故障事件发送邮件；此前恢复的短暂波动不发故障或孤立恢复邮件。确认故障后的首次成功允许一次恢复通知。轮次间隔超过150秒时重置未确认的失败计数，防止采集暂停积累成连续故障；计数和确认状态保存在SQLite，正常重启不会凭空清空已确认事件。
