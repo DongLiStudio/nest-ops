@@ -34,7 +34,7 @@ class MacCollectorBackupJobTests < Minitest::Test
       'plist' => @plist,
       'plist_sha256' => Digest::SHA256.hexdigest(plist_json),
       'receipt' => @receipt,
-      'transport_receipt' => '/Library/ResticStatus/home-compute-1.json',
+      'transport_receipt' => '/Library/ResticStatus/transport/home-compute-1.json',
       'max_age_seconds' => 93_600
     }
     @plist_json = plist_json
@@ -216,13 +216,15 @@ class MacCollectorBackupJobTests < Minitest::Test
       @job['transport_receipt'], 'home-compute-1', @now)['state']
   end
 
-  def test_metadata_is_omitted_when_snapshot_identifier_plus_transport_is_unsafe
+  def test_invalid_configured_transport_is_reported_as_unknown
     @receipt_value['snapshot_id'] = 'private/path'
     assert_nil backup_metadata(@job, 'home-compute-1', @now)
     @receipt_value['snapshot_id'] = 'a' * 64
     @transport_value['error_code'] = '/private/path'
     metadata = backup_metadata(@job, 'home-compute-1', @now)
-    refute metadata.key?('transport')
+    assert_equal 'unknown', metadata['transport']['state']
+    assert_equal 'receipt_invalid', metadata['transport']['error_code']
+    assert_equal @now.to_f, metadata['transport']['checked_at']
     refute_includes JSON.generate(metadata), '/private'
   end
 end

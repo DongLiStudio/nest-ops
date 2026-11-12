@@ -184,7 +184,9 @@ def transport_metadata(path, server, now)
   {'checked_at' => checked.to_f, 'state' => state,
    'unauthenticated_status' => unauth, 'config_status' => config, 'error_code' => error}
 rescue StandardError
-  nil
+  {'checked_at' => now.to_f, 'state' => 'unknown',
+   'unauthenticated_status' => nil, 'config_status' => nil,
+   'error_code' => 'receipt_invalid'}
 end
 
 def backup_metadata(job, server, now)

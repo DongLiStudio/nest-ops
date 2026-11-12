@@ -320,13 +320,37 @@ class TransportMetadataTests(unittest.TestCase):
                    authenticated_config_status=None)
         self.assertEqual(self.metadata()['state'], 'down')
 
-    def test_invalid_or_future_transport_receipt_is_omitted(self):
+    def test_invalid_or_future_transport_receipt_is_explicit_unknown(self):
         self.write(age=-301)
-        self.assertIsNone(self.metadata())
+        self.assertEqual(self.metadata(), {
+            'checked_at': self.NOW, 'state': 'unknown',
+            'unauthenticated_status': None, 'config_status': None,
+            'error_code': 'receipt_invalid'})
         self.write(error_code='/private/path')
-        self.assertIsNone(self.metadata())
+        self.assertEqual(self.metadata()['state'], 'unknown')
+        self.assertEqual(self.metadata()['error_code'], 'receipt_invalid')
         self.write(status='up', unauthenticated_status=None)
-        self.assertIsNone(self.metadata())
+        self.assertEqual(self.metadata()['state'], 'unknown')
+        self.assertEqual(self.metadata()['error_code'], 'receipt_invalid')
+
+    def test_unconfigured_transport_receipt_is_not_invented(self):
+        self.assertIsNone(m.transport_metadata(None, 'demo-1', self.NOW))
+        self.assertIsNone(m.transport_metadata('', 'demo-1', self.NOW))
+
+    def test_invalid_configured_transport_remains_attached_to_backup(self):
+        self.write(age=-301)
+        backup_receipt = Path(self.temp.name) / 'success-invalid-transport.json'
+        backup_receipt.write_text(json.dumps({
+            'status': 'success', 'profile': 'demo-1', 'snapshot': 'snapshot-1',
+            'checked': True, 'check_mode': 'read-data',
+            'utc': datetime.fromtimestamp(
+                self.NOW - 30, timezone.utc).isoformat()}), encoding='utf-8')
+        with patch.object(m.time, 'time', return_value=self.NOW):
+            value = m.receipt_metadata({
+                'receipt': str(backup_receipt),
+                'transport_receipt': str(self.receipt)}, 'demo-1')
+        self.assertEqual(value['transport']['state'], 'unknown')
+        self.assertEqual(value['transport']['error_code'], 'receipt_invalid')
 
     def test_backup_metadata_contains_only_allowlisted_safe_fields(self):
         self.write(age=30)

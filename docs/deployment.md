@@ -10,7 +10,7 @@ NestOps Compose 仅包含 Homepage、console、status；共享网关使用 compo
 6. 在 runtime/console/registry.json 登记自己的服务。运行 add_collector.py 生成每台令牌，安全传输配置并安装。重启 console 读取目录和令牌更新。
 7. 可选定制家庭卡片：将状态 agent 部署到 UPS 所在机器，设置 STATUS_URL 为中心 /_home_status/ingest、UPS_URL 为本地 UPS API、STATUS_TOKEN_FILE 为该采样器令牌文件。使用中心生成的 status-token，勿上传 UPS API 自身密钥。
 
-验收：docker compose config --quiet；各容器正常；HTTPS 证书及登录回跳正常；匿名 /_ops/api 为 401；登录后有数据；各主机心跳更新；停采后未知；三个视图、筛选、分页、原生入口与移动端操作正常。配置 SMTP 后分别测试一次故障与恢复，检查收件箱，不把 SMTP 接受视为实际送达。
+验收：docker compose config --quiet；各容器正常；HTTPS 证书及登录回跳正常；匿名 /_ops/api 为 401；登录后有数据；各主机心跳更新；停采后未知；四个视图、筛选、分页、原生入口与移动端操作正常。配置 SMTP 后分别测试一次故障与恢复，检查收件箱，不把 SMTP 接受视为实际送达。
 
 生产定制登录配置和卡片数据不由通用示例覆盖。此包不自动签发证书；接入已有证书自动更新方案，并在换证后执行 docker compose -f compose.gateway.yml exec gateway nginx -t，再执行 docker compose -f compose.gateway.yml exec gateway nginx -s reload。
 

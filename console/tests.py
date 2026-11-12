@@ -55,7 +55,7 @@ class HistoryTests(unittest.TestCase):
         for error,kind in [(socket.gaierror('private.example/secret'),'dns'),(TimeoutError('secret'),'timeout'),(ssl.SSLCertVerificationError('secret'),'tls_certificate'),(ConnectionResetError('secret'),'connection_reset')]:
             self.assertEqual(m.probe_error(m.urllib.error.URLError(error)),kind)
     def test_probe_retry_preserves_raw_failure_without_alert(self):
-        service={'id':sid,'probe':{'url':'https://example.invalid/'}}
+        service={'id':sid,'name':'Demo','probe':{'url':'https://example.invalid/'}}
         response=io.BytesIO();response.status=200
         opener=unittest.mock.Mock();opener.open.side_effect=[TimeoutError('SECRET'),response]
         with patch.object(m.urllib.request,'build_opener',return_value=opener),patch.object(m.time,'sleep'):
@@ -95,7 +95,7 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(m.DB.execute('SELECT count(*) FROM events').fetchone()[0],0)
         self.assertEqual(m.DB.execute('SELECT count(*) FROM notices').fetchone()[0],0)
     def test_probe_notification_gate_and_no_orphan_recovery(self):
-        service=dict(m.SERVICES[sid],probe={'url':'https://example.invalid/'})
+        service={'id':sid,'probe':{'url':'https://example.invalid/'}}
         config=Path(tmp.name)/'notify-test.json'
         config.write_text(json.dumps(dict(sender='monitor@example.invalid',recipient='owner@example.invalid',address='smtps://smtp.example.invalid:465',username='test',password='fixture')))
         smtp=unittest.mock.MagicMock();smtp.__enter__.return_value=smtp;smtp.send_message.return_value={}
@@ -243,7 +243,7 @@ class HistoryTests(unittest.TestCase):
     def setUp(self):
         with m.LOCK,m.DB:
             for table in ('probe_attempts','probe_alert_state','probe_notifiable',
-                          'hosts','host_health','backup_metadata'):
+                          'hosts','host_health','backup_metadata','service_channels'):
                 m.DB.execute('DELETE FROM '+table)
             m.DB.execute('DELETE FROM spans')
             m.DB.execute('DELETE FROM events')
@@ -332,6 +332,163 @@ class HistoryTests(unittest.TestCase):
                     self.assertFalse(body.get('accepted',True))
         self.assertEqual(m.DB.execute('SELECT count(*) FROM hosts').fetchone()[0],0)
         self.assertEqual(m.DB.execute('SELECT count(*) FROM spans').fetchone()[0],0)
+
+    def test_ingest_allows_probe_with_one_local_target_but_rejects_probe_only(self):
+        host='demo-host'
+        mixed_id='demo-host:mixed'
+        probe_only_id='demo-host:probe-only'
+        services={
+            mixed_id:{
+                'id':mixed_id,'server':host,'name':'Mixed','category':'ops',
+                'app':False,'href':None,'containers':['web'],'units':[],
+                'probe':{'url':'https://example.invalid/'},
+            },
+            probe_only_id:{
+                'id':probe_only_id,'server':host,'name':'Probe','category':'ops',
+                'app':False,'href':None,'containers':[],'units':[],
+                'probe':{'url':'https://example.invalid/'},
+            },
+        }
+        with patch.dict(m.SERVICES,services,clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True):
+            status,body=self.call_ingest(
+                {'services':{mixed_id:{'state':'up'}}},host=host)
+            self.assertEqual(status,200)
+            self.assertTrue(body.get('accepted'))
+            self.assertEqual(m.DB.execute(
+                'SELECT state FROM spans WHERE service=? ORDER BY id DESC LIMIT 1',
+                (mixed_id,)).fetchone()[0],'unknown')
+            rejected,body=self.call_ingest(
+                {'services':{probe_only_id:{'state':'up'}}},host=host)
+            self.assertEqual(rejected,400)
+            self.assertFalse(body.get('accepted',True))
+            self.assertEqual(m.DB.execute(
+                'SELECT count(*) FROM spans WHERE service=?',
+                (probe_only_id,)).fetchone()[0],0)
+
+    def test_probe_and_host_channels_cannot_overwrite_each_other(self):
+        host='demo-host';service_id='demo-host:mixed';now=time.time()-10
+        service={
+            'id':service_id,'server':host,'name':'Mixed','category':'ops',
+            'app':False,'href':None,'containers':['web'],'units':[],
+            'probe':{'url':'https://example.invalid/'},
+        }
+        with patch.dict(m.SERVICES,{service_id:service},clear=True):
+            self.assertEqual(m.update_service_channel(
+                service_id,'host','up','host up',now=now,service=service)[0],'unknown')
+            self.assertEqual(m.update_service_channel(
+                service_id,'probe','up','HTTP 200',now=now+1,service=service)[0],'up')
+            self.assertEqual(m.update_service_channel(
+                service_id,'host','down','container down',now=now+2,service=service)[0],'down')
+            self.assertEqual(m.update_service_channel(
+                service_id,'probe','up','HTTP 200',now=now+3,service=service)[0],'down')
+            self.assertEqual(m.update_service_channel(
+                service_id,'host','up','host restored',now=now+4,service=service)[0],'up')
+            self.assertEqual(m.update_service_channel(
+                service_id,'probe','degraded','HTTP timeout',now=now+5,service=service)[0],'degraded')
+            self.assertEqual(m.update_service_channel(
+                service_id,'probe','up','HTTP 200',now=now+6,service=service)[0],'up')
+        self.assertEqual([row[0] for row in m.DB.execute(
+            'SELECT state FROM spans WHERE service=? ORDER BY id',(service_id,))],
+            ['unknown','up','down','up','degraded','up'])
+        events=list(m.DB.execute(
+            'SELECT old,state,source FROM events WHERE service=? ORDER BY id',
+            (service_id,)))
+        self.assertEqual(events,[
+            ('unknown','up','aggregate'),
+            ('up','down','host'),('down','up','aggregate'),
+            ('up','degraded','probe'),('degraded','up','aggregate')])
+
+    def test_channel_age_forces_unknown_until_both_channels_report(self):
+        host='demo-host';service_id='demo-host:mixed-age';now=time.time()-300
+        service={
+            'id':service_id,'server':host,'name':'Mixed','category':'ops',
+            'app':False,'href':None,'containers':['web'],'units':[],
+            'probe':{'url':'https://example.invalid/'},
+        }
+        with patch.dict(m.SERVICES,{service_id:service},clear=True):
+            m.update_service_channel(service_id,'host','up',now=now,service=service)
+            m.update_service_channel(service_id,'probe','up',now=now,service=service)
+            m.refresh_channel_aggregates(now=now+151)
+            self.assertEqual(m.DB.execute(
+                'SELECT state FROM spans WHERE service=? ORDER BY id DESC LIMIT 1',
+                (service_id,)).fetchone()[0],'unknown')
+            self.assertEqual(m.update_service_channel(
+                service_id,'host','up',now=now+200,service=service)[0],'unknown')
+            self.assertEqual(m.update_service_channel(
+                service_id,'probe','up',now=now+201,service=service)[0],'up')
+
+    def test_stale_channel_never_masks_fresh_fault_or_healthy_evidence(self):
+        host='demo-host';service_id='demo-host:mixed-stale';now=time.time()-400
+        service={
+            'id':service_id,'server':host,'name':'Mixed','category':'ops',
+            'app':False,'href':None,'containers':['web'],'units':[],
+            'probe':{'url':'https://example.invalid/'},
+        }
+        with patch.dict(m.SERVICES,{service_id:service},clear=True):
+            m.update_service_channel(service_id,'host','up',now=now,service=service)
+            m.update_service_channel(service_id,'probe','up',now=now,service=service)
+            self.assertEqual(m.update_service_channel(
+                service_id,'host','down',now=now+250,service=service)[0],'down')
+            m.refresh_channel_aggregates(now=now+301)
+            self.assertEqual(m.update_service_channel(
+                service_id,'host','up',now=now+302,service=service)[0],'unknown')
+            self.assertEqual(m.update_service_channel(
+                service_id,'probe','up',now=now+303,service=service)[0],'up')
+
+    def test_configured_transport_requires_fresh_valid_evidence(self):
+        service_id='backup:transport-required';host='demo-host';now=time.time()-2
+        service=self.backup_service(service_id,host,transport=True)
+        valid_up={'checked_at':now,'state':'up','unauthenticated_status':401,
+                  'config_status':'pinned','error_code':None}
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True):
+            for metadata,state in (
+                    (self.backup_payload(now,snapshot='snapshot-1'),'unknown'),
+                    (self.backup_payload(now,snapshot='snapshot-2',transport={
+                        'checked_at':now,'state':'unknown',
+                        'unauthenticated_status':None,
+                        'config_status':None,'error_code':'probe_error'}),'unknown'),
+                    (self.backup_payload(now,snapshot='snapshot-3',
+                                         checked_at=now+1,
+                                         transport=valid_up),'up')):
+                status,body=self.call_ingest({'services':{service_id:{
+                    'state':'up','backup':metadata}}},host=host)
+                self.assertEqual(status,200)
+                self.assertEqual(body['downgraded_backup_states'],
+                                 1 if state!='up' else 0)
+                self.assertEqual(m.DB.execute(
+                    'SELECT state FROM spans WHERE service=? ORDER BY id DESC LIMIT 1',
+                    (service_id,)).fetchone()[0],state)
+
+    def test_mixed_channels_send_one_failure_and_one_recovery(self):
+        host='demo-host';service_id='demo-host:mixed-notify';now=time.time()-500
+        service={
+            'id':service_id,'server':host,'name':'Mixed','category':'ops',
+            'app':False,'href':None,'containers':['web'],'units':[],
+            'probe':{'url':'https://example.invalid/'},
+        }
+        config=Path(tmp.name)/'notify-mixed.json'
+        config.write_text(json.dumps(dict(
+            sender='monitor@example.invalid',recipient='owner@example.invalid',
+            address='smtps://smtp.example.invalid:465',username='test',
+            password='fixture')))
+        smtp=unittest.mock.MagicMock();smtp.__enter__.return_value=smtp
+        smtp.send_message.return_value={}
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),patch.dict(
+                os.environ,{'OPS_NOTIFY':str(config)}),patch.object(
+                m.smtplib,'SMTP_SSL',return_value=smtp):
+            m.update_service_channel(service_id,'host','up',now=now,service=service)
+            m.update_service_channel(service_id,'probe','up',now=now,service=service)
+            m.update_service_channel(service_id,'host','down',now=now+1,service=service)
+            with patch.object(m.time,'time',return_value=now+2):m.notify_pending()
+            m.probe_cycle(service,False,'timeout',now=now+2)
+            with patch.object(m.time,'time',return_value=now+3):m.notify_pending()
+            m.update_service_channel(service_id,'host','up',now=now+4,service=service)
+            with patch.object(m.time,'time',return_value=now+5):m.notify_pending()
+            m.probe_cycle(service,True,'HTTP 200',now=now+6)
+            with patch.object(m.time,'time',return_value=now+7):m.notify_pending()
+        self.assertEqual(smtp.send_message.call_count,2)
 
     def test_maintenance_state_is_reserved_for_backup_services(self):
         service=next(item for item in m.SERVICES.values()
@@ -522,7 +679,74 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(smtp.send_message.call_count,2)
         self.assertEqual([row[0] for row in m.DB.execute(
             'SELECT state FROM events WHERE service=? ORDER BY id',
-            (service_id,))],['down','unknown','up'])
+            (service_id,))],['down','up'])
+
+    def test_transport_age_creates_consistent_abnormal_event_and_notice(self):
+        service_id='backup:transport-age';host='demo-host';now=time.time()-20
+        service=self.backup_service(service_id,host,transport=True)
+        config=Path(tmp.name)/'notify-transport-age.json'
+        config.write_text(json.dumps(dict(
+            sender='monitor@example.invalid',recipient='owner@example.invalid',
+            address='smtps://smtp.example.invalid:465',
+            username='test',password='fixture')))
+        smtp=unittest.mock.MagicMock();smtp.__enter__.return_value=smtp
+        smtp.send_message.return_value={}
+        transport_up={'checked_at':now,'state':'up',
+                      'unauthenticated_status':401,
+                      'config_status':'pinned','error_code':None}
+        payload=self.backup_payload(
+            now,snapshot='snapshot-age',checked_at=now,transport=transport_up)
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True),patch.dict(
+                os.environ,{'OPS_NOTIFY':str(config)}),patch.object(
+                m.smtplib,'SMTP_SSL',return_value=smtp):
+            with patch.object(m.time,'time',return_value=now):
+                status,_=self.call_ingest({'services':{service_id:{
+                    'state':'up','backup':payload}}},host=host)
+            self.assertEqual(status,200)
+            stale_at=now+m.TRANSPORT_MAX_AGE+1
+            with patch.object(m.time,'time',return_value=stale_at):
+                m.refresh_channel_aggregates(now=stale_at)
+                m.notify_pending()
+                view=m.build_snapshot('24h')
+            event=m.DB.execute(
+                "SELECT old,state,source FROM events WHERE service=? ORDER BY id DESC LIMIT 1",
+                (service_id,)).fetchone()
+        item=view['services'][0]
+        self.assertEqual(item['state'],'down')
+        self.assertEqual(item['backup']['transport']['state'],'down')
+        self.assertEqual(item['backup']['transport']['error_code'],'stale')
+        self.assertEqual(view['summary']['abnormal'],1)
+        self.assertEqual(view['backup_summary']['abnormal'],1)
+        self.assertEqual(event,('unknown','down','transport'))
+        self.assertEqual(smtp.send_message.call_count,1)
+        self.assertEqual(m.DB.execute(
+            "SELECT count(*) FROM notices WHERE status='sent'").fetchone()[0],1)
+
+    def test_transport_missing_is_unknown_without_notice(self):
+        service_id='backup:transport-missing';host='demo-host';now=time.time()-20
+        service=self.backup_service(service_id,host,transport=True)
+        config=Path(tmp.name)/'notify-transport-missing.json'
+        config.write_text(json.dumps(dict(
+            sender='monitor@example.invalid',recipient='owner@example.invalid',
+            address='smtps://smtp.example.invalid:465',
+            username='test',password='fixture')))
+        smtp=unittest.mock.MagicMock();smtp.__enter__.return_value=smtp
+        payload=self.backup_payload(now,snapshot='snapshot-missing')
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True),patch.dict(
+                os.environ,{'OPS_NOTIFY':str(config)}),patch.object(
+                m.smtplib,'SMTP_SSL',return_value=smtp):
+            status,_=self.call_ingest({'services':{service_id:{
+                'state':'up','backup':payload}}},host=host)
+            self.assertEqual(status,200)
+            m.refresh_channel_aggregates(now=now+1)
+            with patch.object(m.time,'time',return_value=now+1):
+                m.notify_pending()
+        self.assertEqual(m.DB.execute(
+            'SELECT state FROM spans WHERE service=? ORDER BY id DESC LIMIT 1',
+            (service_id,)).fetchone()[0],'unknown')
+        self.assertEqual(smtp.send_message.call_count,0)
 
     def test_public_snapshot_hides_private_monitor_configuration_and_flags_service(self):
         private={'id':'private:backup','server':'demo-host','name':'Private backup',

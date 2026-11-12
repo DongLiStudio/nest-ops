@@ -51,10 +51,10 @@ LOCK = threading.RLock()
 DB = sqlite3.connect(str(DATA/'history.sqlite'), check_same_thread=False)
 DB.execute('PRAGMA journal_mode=WAL')
 DB.executescript('''
-CREATE TABLE IF NOT EXISTS spans(id INTEGER PRIMARY KEY,service TEXT,start REAL,end REAL,state TEXT,detail TEXT,ms REAL);
+    CREATE TABLE IF NOT EXISTS spans(id INTEGER PRIMARY KEY,service TEXT,start REAL,end REAL,state TEXT,detail TEXT,ms REAL);
 CREATE INDEX IF NOT EXISTS spans_lookup ON spans(service,start,end);
 CREATE INDEX IF NOT EXISTS spans_latest ON spans(service,id DESC);
-CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,service TEXT,time REAL,old TEXT,state TEXT,detail TEXT);
+CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,service TEXT,time REAL,old TEXT,state TEXT,detail TEXT,source TEXT NOT NULL DEFAULT 'aggregate');
 CREATE INDEX IF NOT EXISTS events_time ON events(time DESC,id DESC);
 CREATE INDEX IF NOT EXISTS events_service_time ON events(service,time DESC,id DESC);
 CREATE INDEX IF NOT EXISTS events_service_state_id ON events(service,state,id DESC);
@@ -67,6 +67,10 @@ CREATE TABLE IF NOT EXISTS probe_attempts(id INTEGER PRIMARY KEY,service TEXT,ti
 CREATE INDEX IF NOT EXISTS probe_attempts_time ON probe_attempts(time);
 CREATE TABLE IF NOT EXISTS probe_alert_state(service TEXT PRIMARY KEY,failures INTEGER,confirmed INTEGER,down_event INTEGER,last_cycle REAL);
 CREATE TABLE IF NOT EXISTS probe_notifiable(event INTEGER PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS service_channels(
+        service TEXT NOT NULL,channel TEXT NOT NULL,observed_at REAL NOT NULL,
+        state TEXT NOT NULL,detail TEXT,ms REAL,
+        PRIMARY KEY(service,channel));
 CREATE TABLE IF NOT EXISTS backup_metadata(
     service TEXT NOT NULL,host TEXT NOT NULL,observed_at REAL NOT NULL,
     schema_version INTEGER,metadata_state TEXT NOT NULL
@@ -75,6 +79,9 @@ CREATE TABLE IF NOT EXISTS backup_metadata(
     PRIMARY KEY(service,host));
 CREATE INDEX IF NOT EXISTS backup_metadata_seen ON backup_metadata(observed_at);
 ''')
+EVENT_COLUMNS = {row[1] for row in DB.execute('PRAGMA table_info(events)').fetchall()}
+if 'source' not in EVENT_COLUMNS:
+    DB.execute("ALTER TABLE events ADD COLUMN source TEXT NOT NULL DEFAULT 'aggregate'")
 NOTICE_COLUMNS = {row[1] for row in DB.execute('PRAGMA table_info(notices)').fetchall()}
 if 'error_kind' not in NOTICE_COLUMNS:
     DB.execute('ALTER TABLE notices ADD COLUMN error_kind TEXT')
@@ -88,8 +95,9 @@ BACKUP_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
 BACKUP_ERROR_RE = re.compile(r'^[a-z][a-z0-9_]{0,63}$')
 BACKUP_CLOCK_SKEW = 300
 TRANSPORT_MAX_AGE = 900
+CHANNEL_MAX_AGE = 150
 
-def record(sid, state, detail='', ms=None, now=None):
+def record(sid, state, detail='', ms=None, now=None, source='aggregate'):
     now = time.time() if now is None else now
     if sid not in SERVICES or state not in STATES: raise ValueError('invalid observation')
     detail = str(detail)[:160]
@@ -112,13 +120,122 @@ def record(sid, state, detail='', ms=None, now=None):
             else:
                 DB.execute('UPDATE spans SET end=? WHERE id=?',(now,pid))
             if old != state:
-                event_id = DB.execute('INSERT INTO events(service,time,old,state,detail) VALUES(?,?,?,?,?)',
-                                      (sid,now,old,state,detail)).lastrowid
+                event_id = DB.execute('INSERT INTO events(service,time,old,state,detail,source) VALUES(?,?,?,?,?,?)',
+                                      (sid,now,old,state,detail,source)).lastrowid
         DB.execute('INSERT INTO spans(service,start,end,state,detail,ms) VALUES(?,?,?,?,?,?)',(sid,now,now,state,detail,ms))
         if not had_previous and state in ('down','degraded'):
-            event_id = DB.execute('INSERT INTO events(service,time,old,state,detail) VALUES(?,?,?,?,?)',
-                                  (sid,now,'unknown',state,detail)).lastrowid
+            event_id = DB.execute('INSERT INTO events(service,time,old,state,detail,source) VALUES(?,?,?,?,?,?)',
+                                  (sid,now,'unknown',state,detail,source)).lastrowid
         return event_id
+
+def service_channels(service):
+    """Return the required independent observation channels for one service."""
+    channels=[]
+    if isinstance(service.get('probe'),dict):
+        channels.append('probe')
+    if (bool(service.get('containers')) or bool(service.get('units')) or
+            bool(service.get('timer')) or bool(service.get('process')) or
+            isinstance(service.get('backup_job'),dict)):
+        channels.append('host')
+    job=service.get('backup_job')
+    if isinstance(job,dict) and isinstance(job.get('transport_receipt'),str):
+        channels.append('transport')
+    return tuple(channels)
+
+def _channel_detail(channel,state,detail):
+    if detail:
+        return detail
+    name='入口探测' if channel=='probe' else '宿主采集'
+    return name+('正常' if state=='up' else '检查异常' if state in ('down','degraded') else '未确认')
+
+def reconcile_service_channels(service,now=None,forced_channels=None):
+    """Persist one aggregate edge from current per-channel observations.
+
+    Any fresh down/degraded channel wins over another healthy channel. Missing
+    or stale evidence yields unknown unless another channel already proves a
+    fault. This prevents an HTTP probe from masking a host or backup failure.
+    """
+    now=time.time() if now is None else now
+    channels=forced_channels or service_channels(service)
+    if not channels:
+        return None,None
+    sid=service['id']
+    with LOCK:
+        rows=DB.execute(
+            'SELECT channel,observed_at,state,detail,ms FROM service_channels '
+            'WHERE service=? AND channel IN ('+','.join('?' for _ in channels)+')',
+            (sid,*channels)).fetchall()
+    by_channel={row[0]:row for row in rows}
+    observations=[]
+    for channel in channels:
+        row=by_channel.get(channel)
+        if not row or now-row[1]>CHANNEL_MAX_AGE:
+            observations.append((channel,'unknown',_channel_detail(channel,'unknown',None),None))
+        else:
+            observations.append((channel,row[2],row[3] or '',row[4]))
+    priority={'down':5,'degraded':4,'unknown':3,'maintenance':2,'up':1}
+    strongest=max(priority[item[1]] for item in observations)
+    candidates=[item for item in observations if priority[item[1]]==strongest]
+    channel,state,detail,ms=candidates[0]
+    source=channel if len(candidates)==1 else 'aggregate'
+    event_id=record(sid,state,detail,ms,now,source=source)
+    return state,event_id
+
+def update_service_channel(sid,channel,state,detail='',ms=None,now=None,service=None):
+    """Store one fresh channel observation and record only aggregate edges."""
+    now=time.time() if now is None else now
+    if sid not in SERVICES or channel not in ('probe','host','transport') or state not in STATES:
+        raise ValueError('invalid channel observation')
+    service=service or SERVICES[sid]
+    channels=service_channels(service)
+    if channel not in channels:
+        channels=(channel,)
+    detail=str(detail)[:160]
+    with LOCK,DB:
+        DB.execute(
+            'INSERT OR REPLACE INTO service_channels(service,channel,observed_at,state,detail,ms) '
+            'VALUES(?,?,?,?,?,?)',(sid,channel,now,state,detail,ms))
+    return reconcile_service_channels(service,now,channels)
+
+def refresh_channel_aggregates(now=None):
+    """Advance aggregate state when a channel ages out without new input."""
+    now=time.time() if now is None else now
+    for service in SERVICES.values():
+        if service_channels(service):
+            reconcile_service_channels(service,now)
+    refresh_backup_transport_channels(now)
+
+def refresh_backup_transport_channels(now):
+    """Turn stale or invalid transport evidence into a durable state edge.
+
+    The collector heartbeat may stop while the REST tunnel receipt ages out.
+    Deriving the transport state only while rendering a snapshot would show
+    the fault but would not create the matching event or notification.
+    """
+    for service in SERVICES.values():
+        job=service.get('backup_job')
+        if not isinstance(job,dict) or not isinstance(job.get('transport_receipt'),str):
+            continue
+        state,detail=transport_channel_observation(
+            backup_metadata_for(service,now))
+        update_service_channel(
+            service['id'],'transport',state,detail,now=now,service=service)
+
+def transport_channel_observation(metadata):
+    """Return the independent aggregate state of a configured transport."""
+    transport=(metadata or {}).get('transport')
+    if metadata.get('metadata_state')!='valid':
+        return 'unknown','上传通路证据缺少有效备份回执'
+    if transport is None:
+        return 'unknown','上传通路回执缺失'
+    if metadata.get('transport_stale'):
+        return 'down','上传通路回执已过期'
+    state=transport.get('state')
+    if state=='up':
+        return 'up','上传通路正常'
+    if state=='down':
+        return 'down','上传通路断开'
+    return 'unknown','上传通路证据无效'
 
 def history(sid, start, end):
     with LOCK:
@@ -150,12 +267,12 @@ def event_page(window='24h',page=1,size=15,service='',before=None):
     if service and service not in allowed:raise ValueError('Unknown resource')
     end=before if before is not None else time.time()
     seconds={'24h':86400,'7d':604800,'30d':2592000}.get(window)
-    previous_notifiable=("(SELECT p.state FROM events p WHERE p.service=e.service "
-                         "AND p.id<e.id AND p.state IN ('up','down','degraded') "
-                         "ORDER BY p.id DESC LIMIT 1)")
+    any_previous=("(SELECT p.state FROM events p WHERE p.service=e.service "
+                  "AND p.id<e.id AND p.state IN ('down','degraded') "
+                  "ORDER BY p.id DESC LIMIT 1)")
     where=['e.service IN ('+','.join('?' for _ in allowed)+')','e.time<=?',
            "(e.state IN ('down','degraded') OR "
-           "(e.state='up' AND "+previous_notifiable+" IN ('down','degraded')))"]
+           "(e.state='up' AND "+any_previous+" IS NOT NULL))"]
     args=allowed+[end]
     if seconds:where.append('e.time>=?');args.append(end-seconds)
     if service:where.append('e.service=?');args.append(service)
@@ -361,13 +478,19 @@ def backup_metadata_for(service, now):
                          now-checked>=-BACKUP_CLOCK_SKEW)
     return result
 
-def previous_notifiable_state(sid,event_id):
+def previous_notifiable_state(sid,event_id,source=None,current_state=None):
     """Find the last state that can itself produce a notification."""
     with LOCK:
-        row=DB.execute(
-            "SELECT state FROM events WHERE service=? AND id<? "
-            "AND state IN ('up','down','degraded') ORDER BY id DESC LIMIT 1",
-            (sid,event_id)).fetchone()
+        if current_state=='up':
+            row=DB.execute(
+                "SELECT state FROM events WHERE service=? AND id<? "
+                "AND state IN ('down','degraded') ORDER BY id DESC LIMIT 1",
+                (sid,event_id)).fetchone()
+        else:
+            row=DB.execute(
+                "SELECT state FROM events WHERE service=? AND id<? AND source=? "
+                "AND state IN ('up','down','degraded') ORDER BY id DESC LIMIT 1",
+                (sid,event_id,source or 'aggregate')).fetchone()
     return row[0] if row else None
 
 
@@ -480,10 +603,9 @@ def notify_pending():
     except (OSError,ValueError):return
     if not isinstance(config,dict) or config.get('enabled') is False:return
     with LOCK:
-        rows=DB.execute("SELECT e.id,e.service,e.time,e.old,e.state,e.detail,coalesce(n.attempts,0) FROM events e LEFT JOIN notices n ON n.event=e.id WHERE (n.status IS NULL OR n.status NOT IN ('sent','skipped')) AND coalesce(n.attempts,0)<5 AND coalesce(n.last_attempt,0)<? ORDER BY e.id LIMIT 10",(time.time()-300,)).fetchall()
-    for eid,sid,when,old,state,detail,attempts in rows:
-        is_probe=bool(SERVICES.get(sid,{}).get('probe'))
-        if is_probe:
+        rows=DB.execute("SELECT e.id,e.service,e.time,e.old,e.state,e.detail,coalesce(n.attempts,0),e.source FROM events e LEFT JOIN notices n ON n.event=e.id WHERE (n.status IS NULL OR n.status NOT IN ('sent','skipped')) AND coalesce(n.attempts,0)<5 AND coalesce(n.last_attempt,0)<? ORDER BY e.id LIMIT 10",(time.time()-300,)).fetchall()
+    for eid,sid,when,old,state,detail,attempts,source in rows:
+        if source=='probe':
             with LOCK:
                 eligible=DB.execute('SELECT 1 FROM probe_notifiable WHERE event=?',(eid,)).fetchone()
             if not eligible:
@@ -495,7 +617,8 @@ def notify_pending():
             # must not suppress the confirmed down transition.
             notifiable=state in ('down','up')
         else:
-            previous=previous_notifiable_state(sid,eid)
+            previous=previous_notifiable_state(
+                sid,eid,source=source,current_state=state)
             # Neutral transitions do not end an incident. A later down/degraded
             # must reuse the original alert instead of paging again until the
             # service has actually recovered.
@@ -509,12 +632,13 @@ def notify_pending():
                 DB.execute('INSERT OR REPLACE INTO notices(event,status,attempts,last_attempt,error_kind) '
                            'VALUES(?,?,?,?,NULL)',(eid,'skipped',attempts,time.time()))
             continue
-        item=SERVICES.get(sid) or SERVERS.get(sid,{'name':sid})
+        item=SERVICES.get(sid) or SERVERS.get(sid) or {'name':sid}
+        display_name=item.get('name') or sid
         if not all(isinstance(config.get(k),str) and config[k] for k in ('sender','recipient','address','username','password')):
             continue
         message=EmailMessage();message['From']=config['sender'];message['To']=config['recipient']
-        message['Subject']='[NestOps] '+('恢复' if state=='up' else '异常')+' · '+item['name']
-        message.set_content(item['name']+'\n'+detail+'\n时间：'+datetime.datetime.fromtimestamp(when,datetime.timezone.utc).isoformat()+'\n查看：'+os.environ.get('OPS_PUBLIC_URL','https://dashboard.example.com')+'\n事件编号：'+str(eid))
+        message['Subject']='[NestOps] '+('恢复' if state=='up' else '异常')+' · '+display_name
+        message.set_content(display_name+'\n'+detail+'\n时间：'+datetime.datetime.fromtimestamp(when,datetime.timezone.utc).isoformat()+'\n查看：'+os.environ.get('OPS_PUBLIC_URL','https://dashboard.example.com')+'\n事件编号：'+str(eid))
         status='failed';error_kind=None
         try:
             address=urlsplit(config['address']); port=address.port or 587
@@ -576,7 +700,8 @@ def probe_cycle(service,success,detail='',ms=None,now=None):
             failures+=1
             confirmed=1 if failures>=3 else 0
             state='down' if confirmed else 'degraded'
-        event_id=record(sid,state,detail,ms,now)
+        aggregate_state,event_id=update_service_channel(
+            sid,'probe',state,detail,ms,now,service=service)
         if event_id is not None:
             if state=='down' and confirmed and not was_confirmed:
                 down_event=event_id
@@ -586,14 +711,15 @@ def probe_cycle(service,success,detail='',ms=None,now=None):
         with DB:
             DB.execute('INSERT OR REPLACE INTO probe_alert_state VALUES(?,?,?,?,?)',
                        (sid,failures,confirmed,down_event,now))
-            # Suppress every raw or aggregate transition except the one confirmed
-            # outage and its later recovery, avoiding notification queue starvation.
+            # Suppress only raw probe transitions. Aggregate edges may belong to
+            # a mixed probe/host service and must preserve its recovery notice.
             DB.execute("INSERT OR IGNORE INTO notices(event,status,attempts,last_attempt,error_kind) "
                        "SELECT e.id,'skipped',0,?,NULL FROM events e WHERE e.service=? "
+                       "AND e.source='probe' "
                        "AND e.id NOT IN (SELECT event FROM probe_notifiable)",(now,sid))
             if confirmed and down_event is not None:
                 DB.execute("DELETE FROM notices WHERE event=? AND status='skipped'",(down_event,))
-    return state
+    return aggregate_state
 
 def probe(service):
     p=service.get('probe')
@@ -631,6 +757,7 @@ def loop():
             DB.execute('DELETE FROM probe_notifiable WHERE event NOT IN (SELECT id FROM events)')
             DB.execute('DELETE FROM samples WHERE time<?',(time.time()-31*86400,))
             DB.execute('DELETE FROM probe_attempts WHERE time<?',(time.time()-31*86400,))
+        refresh_channel_aggregates()
         notify_pending()
         time.sleep(60)
 
@@ -655,8 +782,8 @@ def validate_ingest_payload(payload,host,now):
         service=SERVICES.get(sid)
         if not service or service.get('server')!=host:
             raise ValueError('unknown or cross-host service')
-        if service.get('probe'):
-            raise ValueError('probe services are center-owned')
+        if service.get('probe') and 'host' not in service_channels(service):
+            raise ValueError('probe-only services are center-owned')
         if not isinstance(value,dict) or not isinstance(value.get('state'),str) or \
                 value['state'] not in STATES:
             raise ValueError('invalid service observation')
@@ -688,7 +815,11 @@ def reconcile_backup_state(service,reported_state,metadata_result,now):
         return 'unknown','备份状态缺少有效安全快照元数据'
     if not metadata['fresh']:
         return 'down','备份快照或全仓读检回执已过期'
-    transport=metadata.get('transport') or {}
+    transport=metadata.get('transport')
+    if metadata.get('transport_configured'):
+        if not isinstance(transport,dict) or transport.get('state')=='unknown':
+            return 'unknown','上传通路证据缺失或无效'
+    transport=transport or {}
     if transport.get('state')=='down':
         detail=('上传通路回执已过期' if metadata.get('transport_stale')
                 else '上传通路断开')
@@ -783,7 +914,15 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     state=reported_state
                     detail='宿主只读采集 · 运行状态' if state=='up' else '宿主只读采集 · 检查异常' if state!='unknown' else '宿主检查未能完成'
-                record(sid,state,detail,now=now)
+                update_service_channel(
+                    sid,'host',state,detail,now=now,service=service)
+                if (isinstance(service.get('backup_job'),dict) and
+                        isinstance(service['backup_job'].get('transport_receipt'),str)):
+                    transport_state,transport_detail=transport_channel_observation(
+                        backup_metadata_for(service,now))
+                    update_service_channel(
+                        sid,'transport',transport_state,transport_detail,
+                        now=now,service=service)
             self.send(200,{'accepted':len(accepted),
                            'accepted_backup_metadata':metadata_counts['valid'],
                            'missing_backup_metadata':metadata_counts['missing'],

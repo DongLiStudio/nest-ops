@@ -321,7 +321,12 @@ def receipt_metadata(job, server):
 
 
 def transport_metadata(path, server, now):
-    """Normalize the local no-write transport-probe receipt."""
+    """Normalize the local no-write transport-probe receipt.
+
+    A configured but missing, malformed, or untrustworthy receipt is an
+    explicit unknown observation.  Returning no transport evidence would let
+    an older healthy value remain visible and hide a broken probe.
+    """
     if not isinstance(path,str) or not path:
         return None
     try:
@@ -330,23 +335,23 @@ def transport_metadata(path, server, now):
                 receipt.get('profile')!=server or
                 receipt.get('status') not in ('up','down','unknown') or
                 not isinstance(receipt.get('checked_utc'),str)):
-            return None
+            raise ValueError('invalid transport receipt')
         stamp=receipt['checked_utc']
         checked=datetime.fromisoformat(stamp[:-1]+'+00:00' if stamp.endswith('Z') else stamp)
         if checked.utcoffset()!=timedelta(0):
-            return None
+            raise ValueError('invalid transport timezone')
         timestamp=checked.timestamp()
         if timestamp<0 or timestamp>now+300:
-            return None
+            raise ValueError('invalid transport time')
         unauth=receipt.get('unauthenticated_status')
         config=receipt.get('authenticated_config_status')
         error=receipt.get('error_code')
         if unauth not in (None,401) or config not in (None,'pinned'):
-            return None
+            raise ValueError('invalid transport response')
         if error is not None and (not isinstance(error,str) or not TRANSPORT_ERROR_RE.fullmatch(error)):
-            return None
+            raise ValueError('invalid transport error')
         if receipt['status']=='up' and (unauth!=401 or config!='pinned' or error is not None):
-            return None
+            raise ValueError('incomplete healthy transport')
         state=receipt['status']
         if now-timestamp>TRANSPORT_MAX_AGE:
             state='down'
@@ -356,7 +361,9 @@ def transport_metadata(path, server, now):
                 'unauthenticated_status':unauth,'config_status':config,
                 'error_code':error}
     except (OSError,UnicodeError,ValueError,TypeError,OverflowError):
-        return None
+        return {'checked_at':float(now),'state':'unknown',
+                'unauthenticated_status':None,'config_status':None,
+                'error_code':'receipt_invalid'}
 
 
 def docker_command(config):

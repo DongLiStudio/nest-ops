@@ -1,8 +1,8 @@
 # Status
 
-2026-11-12：NestOps 备份运行态、只读“备份”页与安全回传协议已在源码完成统一。中心启动时校验互斥监测配置；ingest 只接受严格白名单字段，整包校验后才写入，备份 `up`/`maintenance` 必须绑定本次有效且未过期的安全快照，旧快照不能回滚新值；上传通路明确失败或超过 15 分钟会投影为 `down`。SQLite 只持久化有界备份元数据，公开快照不返回本地路径或令牌。UI 区分当前/上次有效快照、缺失/无效元数据、筛选空态和异常上传通路，并保持只读，无立即备份、恢复或删除入口。`maintenance`/`unknown` 不发送邮件且不打断已确认事故的恢复语义；Backrest 操作历史按 256 条分页查找真实备份。后端 49 项、采集器 59 项、前端与加载回归、Python/JS 语法、1525 份公开来源校验及公开值下的三份 Compose 解析通过；当前 Windows 无 Ruby，macOS Ruby 语法与 Minitest 保留为 Mac 部署前门禁。未部署、未连接生产、未提交 Git。
+2026-11-12：NestOps 备份运行态、只读“备份”页与安全回传协议已在源码完成统一。中心启动时校验互斥监测配置；ingest 只接受严格白名单字段，整包校验后才写入，备份 `up`/`maintenance` 必须绑定本次有效且未过期的安全快照，旧快照不能回滚新值；入口、宿主与上传通路分别保存最新证据，任一明确故障都不能被另一条健康通道覆盖。上传通路明确失败、回执损坏或超过 15 分钟会分别投影为 `unknown`/`down` 并产生持久状态边沿。SQLite 只持久化有界备份元数据，公开快照不返回本地路径或令牌。UI 沿用现有第四个只读“备份”视图，区分当前/上次有效快照、缺失/无效元数据、筛选空态和异常上传通路，无立即备份、恢复或删除入口。`maintenance`/`unknown` 不发送邮件且不打断已确认事故的恢复语义；Backrest 操作历史按 256 条分页查找真实备份。后端 57 项、采集器 61 项、前端/加载/事件分页回归、Python/JS 语法、1525 份公开来源校验及公开值下的三份 Compose 解析通过；当前 Windows 无 Ruby，macOS Ruby 语法与 Minitest 保留为 Mac 部署前门禁。未部署、未连接生产、未提交 Git。
 
-macOS canonical collector 新增配置驱动的 launchd `backup_job`：只读取 root-owned 公共 plist/回执，固定 canonical Ruby backup 参数向量、plist SHA-256、每日 04:00 日程和安全时间字段；运行中保留 `maintenance`，失败/过期判 `down`，缺失/损坏判 `unknown`，上报仅含有界备份/transport 元数据。采集器 52 项回归和仓库 verify 通过；当前 Windows 环境无 Ruby，Ruby Minitest 与语法检查保留为 Mac 部署前门禁，尚未部署。
+macOS canonical collector 新增配置驱动的 launchd `backup_job`：只读取 root-owned 公共 plist/回执，固定 canonical Ruby backup 参数向量、plist SHA-256、每日 04:00 日程和安全时间字段；运行中保留 `maintenance`，失败/过期判 `down`，缺失/损坏判 `unknown`，上报仅含有界备份/transport 元数据。上传通路回执固定存放在 `/Library/ResticStatus/transport/<profile>.json`，与备份健康回执分离。采集器 52 项回归和仓库 verify 通过；当前 Windows 环境无 Ruby，Ruby 语法与 Minitest 检查保留为 Mac 部署前门禁，尚未部署。
 
 Linux/NAS backup_job 新增显式 scheduler=backrest：只读核对本机实例、计划启用日程、仓库GUID、最新真实备份和同快照完整检查回执；远端同步、钩子、索引、待执行与dry run不充当成功证据，真实失败优先于旧成功。兼容原systemd分支；不读取备份密码、不执行备份或写操作历史。新增17项Backrest回归，连同原28项采集器回归共45项通过；生产部署需独立验收。
 
