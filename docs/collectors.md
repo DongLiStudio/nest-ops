@@ -22,7 +22,7 @@ systemd 服务的 PATH 可能与交互终端不同。Linux/NAS 可在本机私�
 
 ### 定时备份任务
 
-Linux/NAS 可使用 `backup_job` 观察 systemd 定时备份，或通过显式 `scheduler: "backrest"` 观察本机 Backrest 计划、真实备份操作和持久完整检查回执；macOS 使用 `scheduler: "launchd"` 观察 root 系统计划。只读取本机计划状态、配置及只读操作历史，不执行备份、恢复或仓库查询，不读取备份密码。不要把每日 oneshot service 加入 `units`，正常等待时的 `inactive` 不代表备份故障；真实任务运行且上一份 `read-data` 成功回执仍在 26 小时内时显示 `maintenance`（“备份运行中”）。Linux 回执读取要求普通文件、非符号链接、稳定设备号/inode/大小/mtime/所有者/权限，并限制为 64 KiB；POSIX 还要求 root 所有且权限为 `0644`（macOS 另要求 root:wheel）。运行态回执和 `transport_receipt` 独立读取、独立回传：某一份损坏不会吞掉另一份已知故障，缺失或损坏的已配置 transport 会显式回传 `unknown`。配置和回执格式见 [配置说明](configuration.md#定时备份监测)。
+Linux/NAS 可使用 `backup_job` 观察 systemd 定时备份，或通过显式 `scheduler: "backrest"` 观察本机 Backrest 计划、真实备份操作和持久完整检查回执；macOS 使用 `scheduler: "launchd"` 观察 root 系统计划。只读取本机计划状态、配置及只读操作历史，不执行备份、恢复或仓库查询，不读取备份密码。不要把每日 oneshot service 加入 `units`，正常等待时的 `inactive` 不代表备份故障；真实任务运行且上一份 `read-data` 成功回执仍在 26 小时内时显示 `maintenance`（“备份运行中”）。Linux 回执读取要求普通文件、非符号链接、稳定设备号/inode/大小/mtime/所有者/权限，并限制为 64 KiB；POSIX 的备份回执要求 root 所有且权限为 `0600` 或 `0644`，上传通路回执只接受 root 所有且权限为 `0644`（macOS 另要求 root:wheel）。运行态回执和 `transport_receipt` 独立读取、独立回传：某一份损坏不会吞掉另一份已知故障，缺失或损坏的已配置 transport 会显式回传 `unknown`。配置和回执格式见 [配置说明](configuration.md#定时备份监测)。
 
 更新现有采集器时保留原令牌，增量同步这项配置和采集脚本；不要为新增监测项重新生成或轮换整台宿主的令牌。macOS 的 plist 必须固定 SHA-256，系统 launchd 计划必须为 root:wheel、每日 04:00、`RunAtLoad=false`，且没有额外触发器；plist、摘要、回执或身份任一不符都显示 `unknown` 或 `down`，不会猜测成功。
 
