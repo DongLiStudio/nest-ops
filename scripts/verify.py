@@ -1,6 +1,7 @@
 """Offline release gate: source provenance, generic configuration and Python syntax."""
 import ast,hashlib,json,re,sys
 from pathlib import Path
+from service_schema import validate_registry
 ROOT=Path(__file__).resolve().parents[1]
 errors=[]
 manifest=json.loads((ROOT/'upstream-manifest.json').read_text(encoding='utf-8'))
@@ -32,6 +33,10 @@ for p in ROOT.rglob('*'):
         if ip not in ['127.0.0.1','0.0.0.0'] and not ip.startswith(('192.0.2.','198.51.100.','203.0.113.')):errors.append(str(p.relative_to(ROOT))+': non-example IP')
     if re.search(r'-----BEGIN (?:OPENSSH|RSA|EC|PRIVATE).*KEY-----',text):errors.append(str(p)+': private key marker')
 registry=json.loads((ROOT/'examples/registry.json').read_text(encoding='utf-8'))
+try:
+    validate_registry(registry)
+except ValueError as error:
+    errors.append('service schema: '+str(error))
 servers={s['id'] for s in registry['servers']}
 if len(servers)!=len(registry['servers']):errors.append('duplicate server ids')
 ids=set()

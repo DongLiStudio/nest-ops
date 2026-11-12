@@ -1,6 +1,7 @@
 """Generate one scoped credential and allowlisted configuration from the directory."""
 import json,os,secrets,sys
 from pathlib import Path
+from service_schema import safe_collector_service
 ROOT=Path(__file__).resolve().parents[1]
 if len(sys.argv)!=3:raise SystemExit('Usage: add_collector.py server-id https://dashboard.example.com')
 host,base=sys.argv[1:]
@@ -10,10 +11,20 @@ if url.scheme!='https' or not url.hostname or url.username or url.password or ur
 registry=json.loads((ROOT/'runtime/console/registry.json').read_text(encoding='utf-8'))
 if host not in {s['id'] for s in registry['servers']}:raise SystemExit('Unknown registered server')
 if not host.replace('-','').replace('_','').isalnum():raise SystemExit('Server id must be filename safe')
+try:
+    # HTTP-only probes are evaluated at the centre. A service can also pair a
+    # central HTTP probe with exactly one host-local target; the schema keeps
+    # that host target and intentionally omits the private URL from the
+    # generated source configuration.
+    services=[]
+    for service in registry['services']:
+        if service['server']!=host:continue
+        clean=safe_collector_service(service)
+        if len(clean)>1:services.append(clean)
+except ValueError as error:raise SystemExit(str(error))
 target=ROOT/'runtime/console/tokens.json';tokens=json.loads(target.read_text(encoding='utf-8'))
 if host in tokens:raise SystemExit('Token exists; revoke and rotate explicitly')
 token=secrets.token_urlsafe(48);tokens[host]=token
-services=[{k:v for k,v in s.items() if k in ('id','containers','units','timer','process','backup_job')} for s in registry['services'] if s['server']==host and not s.get('probe')]
 old=os.umask(0o077)
 try:
     output=ROOT/'runtime'/f'collector-{host}.json'

@@ -6,6 +6,8 @@ from pathlib import Path
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('collector',ROOT/'collectors/linux/collector.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+schema_spec=importlib.util.spec_from_file_location('service_schema',ROOT/'scripts/service_schema.py')
+schema=importlib.util.module_from_spec(schema_spec);schema_spec.loader.exec_module(schema)
 class CollectorTests(unittest.TestCase):
     def test_absent_docker_unknown(self):
         with patch.object(m.shutil,'which',return_value=None),patch.object(m.Path,'exists',return_value=False):
@@ -105,7 +107,8 @@ class BackupJobTests(unittest.TestCase):
         self.write_receipt()
 
     def write_receipt(self, age=60, **overrides):
-        receipt = {'profile': 'demo-1', 'snapshot': 'example-snapshot', 'checked': True,
+        receipt = {'status': 'success', 'profile': 'demo-1', 'snapshot': 'example-snapshot',
+                   'checked': True, 'check_mode': 'read-data',
                    'utc': datetime.fromtimestamp(self.NOW - age, timezone.utc).isoformat()}
         receipt.update(overrides)
         self.receipt.write_text(json.dumps(receipt), encoding='utf-8')
@@ -156,13 +159,17 @@ class BackupJobTests(unittest.TestCase):
         self.assertEqual(self.state(), 'up')
 
     def test_receipt_age_boundary_and_expiry(self):
-        for age, expected in [(93600, 'up'), (93601, 'degraded')]:
+        for age, expected in [(93600, 'up'), (93601, 'down')]:
             with self.subTest(age=age):
                 self.write_receipt(age=age)
                 self.assertEqual(self.state(), expected)
 
     def test_missing_receipt_is_unknown(self):
         self.receipt.unlink()
+        self.assertEqual(self.state(), 'unknown')
+
+    def test_up_is_not_reported_when_safe_metadata_cannot_be_emitted(self):
+        self.write_receipt(snapshot='private path/snapshot')
         self.assertEqual(self.state(), 'unknown')
 
     def test_invalid_json_and_non_object_receipts_are_unknown(self):
@@ -179,15 +186,32 @@ class BackupJobTests(unittest.TestCase):
         job = dict(self.job)
         del job['max_age_seconds']
         self.write_receipt(age=93601)
-        self.assertEqual(self.state(job), 'degraded')
+        self.assertEqual(self.state(job), 'down')
 
-    def test_receipt_requires_checked_profile_and_snapshot(self):
-        for override in [{'checked': False}, {'checked': 1}, {'checked': 'true'}, {'profile': 'other-host'},
-                         {'snapshot': ''}, {'snapshot': '  '}, {'snapshot': 123},
-                         {'utc': None}]:
+    def test_receipt_requires_success_checked_read_data_profile_and_snapshot(self):
+        cases = [
+            ({'status': 'failed'}, 'down'),
+            ({'status': None}, 'unknown'),
+            ({'checked': False}, 'down'),
+            ({'checked': 0}, 'unknown'),
+            ({'checked': 1}, 'unknown'),
+            ({'checked': 'true'}, 'unknown'),
+            ({'checked': []}, 'unknown'),
+            ({'check_mode': None}, 'unknown'),
+            ({'check_mode': 1}, 'unknown'),
+            ({'check_mode': []}, 'unknown'),
+            ({'check_mode': ''}, 'unknown'),
+            ({'check_mode': 'metadata'}, 'down'),
+            ({'profile': 'other-host'}, 'unknown'),
+            ({'snapshot': ''}, 'unknown'),
+            ({'snapshot': '  '}, 'unknown'),
+            ({'snapshot': 123}, 'unknown'),
+            ({'utc': None}, 'unknown'),
+        ]
+        for override, expected in cases:
             with self.subTest(override=override):
                 self.write_receipt(**override)
-                self.assertEqual(self.state(), 'unknown')
+                self.assertEqual(self.state(), expected)
 
     def test_timestamp_requires_valid_utc_timezone(self):
         for stamp in ['2026-01-01', '2026-01-01T00:14:00',
@@ -209,15 +233,29 @@ class BackupJobTests(unittest.TestCase):
 
     def test_running_retry_uses_receipt_instead_of_old_failure(self):
         self.service.update(ActiveState='active', Result='exit-code', ExecMainStatus='1')
-        self.assertEqual(self.state(), 'up')
+        self.assertEqual(self.state(), 'maintenance')
         self.write_receipt(age=93601)
-        self.assertEqual(self.state(), 'degraded')
+        self.assertEqual(self.state(), 'down')
         self.receipt.unlink()
         self.assertEqual(self.state(), 'unknown')
 
     def test_starting_job_is_not_failed_by_previous_attempt(self):
         self.service.update(ActiveState='activating', Result='exit-code', ExecMainStatus='1')
-        self.assertEqual(self.state(), 'up')
+        self.assertEqual(self.state(), 'maintenance')
+
+    def test_running_without_a_valid_receipt_is_unknown(self):
+        self.service['ActiveState'] = 'active'
+        for override in ({'status': 'failed'}, {'checked': False},
+                         {'check_mode': None}, {'snapshot': ''}):
+            with self.subTest(override=override):
+                self.write_receipt(**override)
+                expected = 'down' if override in ({'status': 'failed'}, {'checked': False}) else 'unknown'
+                self.assertEqual(self.state(), expected)
+
+    def test_running_with_a_stale_receipt_is_down(self):
+        self.service['ActiveState'] = 'active'
+        self.write_receipt(age=93601)
+        self.assertEqual(self.state(), 'down')
 
     def test_unavailable_or_incomplete_systemd_observation_is_unknown(self):
         for target, value in [('timer', None), ('service', None), ('timer', 1), ('service', 1),
@@ -240,20 +278,238 @@ class BackupJobTests(unittest.TestCase):
                 self.assertEqual(self.state({**self.job, 'max_age_seconds': maximum}), 'unknown')
 
 
+class TransportMetadataTests(unittest.TestCase):
+    NOW = 1792569600
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.receipt = Path(self.temp.name) / 'transport.json'
+
+    def write(self, age=30, **changes):
+        value = {
+            'schema': 1,
+            'profile': 'demo-1',
+            'status': 'up',
+            'checked_utc': datetime.fromtimestamp(
+                self.NOW - age, timezone.utc).isoformat(),
+            'unauthenticated_status': 401,
+            'authenticated_config_status': 'pinned',
+            'error_code': None,
+        }
+        value.update(changes)
+        self.receipt.write_text(json.dumps(value), encoding='utf-8')
+
+    def metadata(self):
+        return m.transport_metadata(str(self.receipt), 'demo-1', self.NOW)
+
+    def test_fifteen_minute_boundary_and_stale_projection(self):
+        self.write(age=900)
+        self.assertEqual(self.metadata()['state'], 'up')
+        self.assertIsNone(self.metadata()['error_code'])
+        self.write(age=901)
+        value = self.metadata()
+        self.assertEqual(value['state'], 'down')
+        self.assertEqual(value['error_code'], 'stale')
+        self.assertEqual(set(value), {
+            'checked_at', 'state', 'unauthenticated_status', 'config_status',
+            'error_code'})
+
+    def test_unknown_stale_receipt_is_also_down(self):
+        self.write(age=901, status='unknown', unauthenticated_status=None,
+                   authenticated_config_status=None)
+        self.assertEqual(self.metadata()['state'], 'down')
+
+    def test_invalid_or_future_transport_receipt_is_omitted(self):
+        self.write(age=-301)
+        self.assertIsNone(self.metadata())
+        self.write(error_code='/private/path')
+        self.assertIsNone(self.metadata())
+        self.write(status='up', unauthenticated_status=None)
+        self.assertIsNone(self.metadata())
+
+    def test_backup_metadata_contains_only_allowlisted_safe_fields(self):
+        self.write(age=30)
+        self.receipt.write_text(json.dumps({
+            **json.loads(self.receipt.read_text()),
+            'private_path': '/private/restic/key',
+            'raw_error': 'private details',
+        }), encoding='utf-8')
+        backup_receipt = Path(self.temp.name) / 'success.json'
+        backup_receipt.write_text(json.dumps({
+            'status': 'success', 'profile': 'demo-1', 'snapshot': 'snapshot-1',
+            'checked': True, 'check_mode': 'read-data',
+            'utc': datetime.fromtimestamp(
+                self.NOW - 30, timezone.utc).isoformat(),
+            'private_path': '/private/restic/key'}), encoding='utf-8')
+        with patch.object(m.time, 'time', return_value=self.NOW):
+            value = m.receipt_metadata({
+                'receipt': str(backup_receipt),
+                'transport_receipt': str(self.receipt)}, 'demo-1')
+        self.assertEqual(set(value), {
+            'schema_version', 'checked_at', 'snapshot_id', 'check_mode',
+            'transport'})
+        self.assertNotIn('/private', json.dumps(value))
+
+
+class ServiceSchemaTests(unittest.TestCase):
+    def setUp(self):
+        self.systemd={'timer':'example-backup.timer','service':'example-backup.service',
+                      'receipt':'/var/lib/example-backup/last-success.json'}
+
+    def test_backup_job_is_exclusive_and_does_not_inject_empty_targets(self):
+        self.assertEqual(schema.safe_collector_service(
+            {'id':'demo:backup','backup_job':self.systemd}),
+            {'id':'demo:backup','backup_job':{**self.systemd,'max_age_seconds':93600}})
+        self.assertEqual(schema.safe_collector_service(
+            {'id':'demo:backup','backup_job':{
+                **self.systemd,'scheduler':'systemd'}}),
+            {'id':'demo:backup','backup_job':{
+                **self.systemd,'scheduler':'systemd',
+                'max_age_seconds':93600}})
+        self.assertEqual(schema.safe_collector_service(
+            {'id':'demo:empty','containers':[],'units':[]}),{'id':'demo:empty'})
+        self.assertEqual(schema.safe_collector_service({
+            'id':'demo:backup','backup_job':self.systemd,
+            'probe':{'url':'https://example.invalid/'}}),
+            {'id':'demo:backup','backup_job':{
+                **self.systemd,'max_age_seconds':93600}})
+        for extra in ({'containers':['web']},{'units':['demo.service']},
+                      {'timer':'other.timer'},{'process':'backup'}):
+            with self.subTest(extra=extra),self.assertRaises(ValueError):
+                schema.safe_collector_service({'id':'demo:backup','backup_job':self.systemd,**extra})
+
+    def test_probe_schema_is_strict_and_exclusive(self):
+        probe={'url':'https://status.example.invalid/health?full=1',
+               'label':'Public health','codes':[200,204]}
+        self.assertEqual(schema.safe_collector_service(
+            {'id':'demo:probe','probe':probe}),{'id':'demo:probe'})
+        self.assertEqual(schema.safe_probe({'url':'http://example.invalid/'}),
+                         {'url':'http://example.invalid/'})
+        invalid=[
+            None,[],{},
+            {'url':'ftp://example.invalid/'},
+            {'url':'https://user:secret@example.invalid/'},
+            {'url':'https:///missing-host'},
+            {'url':'https://example.invalid:99999/'},
+            {'url':'https://example.invalid/','label':''},
+            {'url':'https://example.invalid/','label':'bad\nlabel'},
+            {'url':'https://example.invalid/','label':'x'*81},
+            {'url':'https://example.invalid/','codes':[]},
+            {'url':'https://example.invalid/','codes':[True]},
+            {'url':'https://example.invalid/','codes':[99]},
+            {'url':'https://example.invalid/','codes':[200,200]},
+            {'url':'https://example.invalid/','unexpected':True},
+        ]
+        for value in invalid:
+            with self.subTest(value=value),self.assertRaises(ValueError):
+                schema.safe_probe(value)
+        for extra,expected in (
+                ({'containers':['web']},{'id':'demo:probe','containers':['web']}),
+                ({'units':['demo.service']},{'id':'demo:probe','units':['demo.service']}),
+                ({'timer':'other.timer'},{'id':'demo:probe','timer':'other.timer'}),
+                ({'process':'probe-worker'},{'id':'demo:probe','process':'probe-worker'})):
+            with self.subTest(extra=extra):
+                self.assertEqual(
+                    schema.safe_collector_service({'id':'demo:probe','probe':probe,**extra}),
+                    expected)
+        with self.assertRaises(ValueError):
+            schema.safe_collector_service({'id':'demo:probe','probe':probe,
+                                           'containers':['web'],'process':'worker'})
+
+    def test_backup_job_validates_scheduler_fields_and_bounded_values(self):
+        cases=[
+            {**self.systemd,'scheduler':'unsupported'},
+            {**self.systemd,'timer':'bad timer'},
+            {**self.systemd,'receipt':'relative/last-success.json'},
+            {**self.systemd,'receipt':'/var/lib/../secret.json'},
+            {**self.systemd,'receipt':'/var/lib/example\x01/secret.json'},
+            {**self.systemd,'receipt':'/var/lib/example\x7f/secret.json'},
+            {**self.systemd,'max_age_seconds':float('inf')},
+            {**self.systemd,'max_age_seconds':59},
+            {**self.systemd,'unexpected':True},
+        ]
+        for job in cases:
+            with self.subTest(job=job),self.assertRaises(ValueError):
+                schema.safe_backup_job(job)
+        launchd={'scheduler':'launchd','label':'com.example.backup',
+                 'plist':'/Library/LaunchDaemons/com.example.backup.plist',
+                 'receipt':'/Library/Application Support/Example/health.json'}
+        with self.assertRaises(ValueError):
+            schema.safe_backup_job(launchd)
+        self.assertEqual(schema.safe_backup_job(
+            {**launchd,'plist_sha256':'a'*64})['plist_sha256'],'a'*64)
+        with self.assertRaises(ValueError):
+            schema.safe_backup_job({**launchd,'plist_sha256':'A'*64})
+        with self.assertRaises(ValueError):
+            schema.safe_backup_job({**launchd,'plist':'/Library/\x1fExample.plist'})
+
+    def test_every_active_monitor_combination_is_mutually_exclusive(self):
+        backrest={'scheduler':'backrest','service':'example-backrest.service',
+                  'config':'/opt/example/config.json','oplog':'/opt/example/oplog.sqlite',
+                  'plan':'example-daily',
+                  'receipt':'/var/lib/example/success.json'}
+        launchd={'scheduler':'launchd','label':'com.example.backup',
+                 'plist':'/Library/LaunchDaemons/com.example.backup.plist',
+                 'plist_sha256':'a'*64,
+                 'receipt':'/Library/Application Support/Example/health.json'}
+        monitors=(self.systemd,backrest,launchd)
+        extras=({'containers':['web']},{'units':['demo.service']},
+                {'timer':'other.timer'},{'process':'worker'})
+        for backup_job in monitors:
+            for extra in extras:
+                with self.subTest(backup_job=backup_job,extra=extra), \
+                        self.assertRaises(ValueError):
+                    schema.safe_collector_service({
+                        'id':'demo:backup','backup_job':backup_job,**extra})
+            with self.subTest(backup_job=backup_job):
+                clean=schema.safe_collector_service({
+                    'id':'demo:backup','backup_job':backup_job,
+                    'probe':{'url':'https://example.invalid/'}})
+                self.assertNotIn('probe',clean)
+                self.assertEqual(clean['backup_job']['max_age_seconds'],93600)
+
+    def test_registry_validates_identity_and_rejects_duplicates(self):
+        registry={'servers':[{'id':'demo-1','name':'Demo','address':'example.invalid'}],
+                  'services':[{'id':'demo-1:backup','server':'demo-1','name':'Backup',
+                               'category':'ops','app':False,'href':None,
+                               'backup_job':self.systemd}]}
+        self.assertTrue(schema.validate_registry(registry))
+        invalid=[
+            {**registry,'servers':registry['servers']*2},
+            {**registry,'services':registry['services']*2},
+            {**registry,'services':[{**registry['services'][0],
+                                     'server':'missing'}]},
+            {**registry,'services':[{**registry['services'][0],'app':1}]},
+        ]
+        for value in invalid:
+            with self.subTest(value=value),self.assertRaises(ValueError):
+                schema.validate_registry(value)
+
+
 class CollectorConfigurationTests(unittest.TestCase):
     def test_generated_scoped_config_preserves_backup_job(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'scripts').mkdir()
+            (root / 'console').mkdir()
             (root / 'runtime/console').mkdir(parents=True)
             script = root / 'scripts/add_collector.py'
             shutil.copyfile(ROOT / 'scripts/add_collector.py', script)
+            shutil.copyfile(ROOT / 'scripts/service_schema.py', root / 'scripts/service_schema.py')
+            shutil.copyfile(ROOT / 'console/service_schema.py',
+                            root / 'console/service_schema.py')
             job = {'timer': 'example-backup.timer', 'service': 'example-backup.service',
                    'receipt': '/var/lib/example-backup/last-success.json',
                    'max_age_seconds': 93600}
             registry = {'servers': [{'id': 'demo-1'}], 'services': [
                 {'id': 'demo-1:backup', 'server': 'demo-1', 'name': 'Daily backup',
-                 'backup_job': job},
+                 'backup_job': job,
+                 'probe': {'url': 'https://status.example.invalid/health'}},
+                {'id': 'demo-1:http', 'server': 'demo-1', 'name': 'HTTP only',
+                 'probe': {'url': 'https://entry.example.invalid/'}},
+                {'id': 'demo-1:container', 'server': 'demo-1', 'name': 'Container',
+                 'containers': ['example']},
                 {'id': 'other:backup', 'server': 'other', 'backup_job': job}]}
             (root / 'runtime/console/registry.json').write_text(json.dumps(registry))
             (root / 'runtime/console/tokens.json').write_text('{}')
@@ -261,7 +517,10 @@ class CollectorConfigurationTests(unittest.TestCase):
                     contextlib.redirect_stdout(io.StringIO()):
                 runpy.run_path(str(script), run_name='__main__')
             config = json.loads((root / 'runtime/collector-demo-1.json').read_text())
-            self.assertEqual(config['services'], [{'id': 'demo-1:backup', 'backup_job': job}])
+            self.assertEqual(config['services'], [
+                {'id': 'demo-1:backup', 'backup_job': job},
+                {'id': 'demo-1:container', 'containers': ['example']},
+            ])
             self.assertEqual(config['server'], 'demo-1')
 
 
@@ -296,7 +555,8 @@ class BackrestMonitorTests(unittest.TestCase):
         Path(self.job['config']).write_text(json.dumps(self.config), encoding='utf-8')
 
     def write_receipt(self, age=30, **changes):
-        receipt = {'profile': 'demo-1', 'snapshot': 'snapshot-1', 'checked': True,
+        receipt = {'status': 'success', 'profile': 'demo-1', 'snapshot': 'snapshot-1',
+                   'checked': True, 'check_mode': 'read-data',
                    'utc': datetime.fromtimestamp(self.NOW-age, timezone.utc).isoformat()}
         receipt.update(changes)
         Path(self.job['receipt']).write_text(json.dumps(receipt), encoding='utf-8')
@@ -350,9 +610,34 @@ class BackrestMonitorTests(unittest.TestCase):
         self.add_operation(3, 3, b'\xa2\x06\x02\x28\x01')
         self.assertEqual(self.state(), 'down')
 
+    def test_paged_operation_scan_finds_backup_after_page_of_unrelated_records(self):
+        with closing(sqlite3.connect(self.job['oplog'])) as db:
+            db.executemany(
+                'INSERT INTO operations VALUES (?,?,?,?,?,?)',
+                [(1000 + index, 1, 3, '', (self.NOW - index) * 1000,
+                  b'\xd2\x06\x00') for index in range(300)])
+            db.commit()
+        self.assertEqual(m.BACKREST_PAGE_SIZE, 256)
+        self.assertEqual(self.state(), 'up')
+
     def test_running_backup_preserves_last_checked_copy(self):
         self.add_operation(2, 2, snapshot='')
-        self.assertEqual(self.state(), 'up')
+        self.assertEqual(self.state(), 'maintenance')
+
+    def test_running_backup_requires_a_fresh_valid_previous_copy(self):
+        self.add_operation(2, 2, snapshot='')
+        self.write_receipt(age=93601)
+        with closing(sqlite3.connect(self.job['oplog'])) as db:
+            db.execute('UPDATE operations SET start_time_ms=? WHERE id=1',
+                       ((self.NOW-93700)*1000,))
+            db.commit()
+        self.assertEqual(self.state(), 'down')
+        self.write_receipt(**{'check_mode': None})
+        self.assertEqual(self.state(), 'unknown')
+        self.write_receipt(**{'check_mode': 'metadata'})
+        self.assertEqual(self.state(), 'down')
+        self.write_receipt(**{'status': 'failed'})
+        self.assertEqual(self.state(), 'down')
 
     def test_service_disabled_or_stopped_is_down(self):
         for active, enabled in [('inactive', 'enabled'), ('active', 'disabled')]:
@@ -375,17 +660,29 @@ class BackrestMonitorTests(unittest.TestCase):
         self.assertEqual(self.state(), 'unknown')
 
     def test_full_check_required_for_same_latest_snapshot(self):
-        for changes in ({'snapshot': 'old'}, {'checked': False}, {'checked': 1},
-                        {'profile': 'other'}):
+        cases = [
+            ({'snapshot': 'old'}, 'unknown'),
+            ({'checked': False}, 'down'),
+            ({'checked': 0}, 'unknown'),
+            ({'checked': 1}, 'unknown'),
+            ({'checked': 'true'}, 'unknown'),
+            ({'profile': 'other'}, 'unknown'),
+            ({'status': 'failed'}, 'down'),
+            ({'check_mode': None}, 'unknown'),
+            ({'check_mode': 1}, 'unknown'),
+            ({'check_mode': ''}, 'unknown'),
+            ({'check_mode': 'metadata'}, 'down'),
+        ]
+        for changes, expected in cases:
             self.write_receipt(**changes)
-            self.assertEqual(self.state(), 'unknown')
+            self.assertEqual(self.state(), expected)
 
-    def test_expired_copy_is_degraded_future_unknown(self):
+    def test_expired_copy_is_down_future_unknown(self):
         with closing(sqlite3.connect(self.job['oplog'])) as db:
             db.execute('UPDATE operations SET start_time_ms=?', ((self.NOW-94000)*1000,))
             db.commit()
         self.write_receipt(age=93601)
-        self.assertEqual(self.state(), 'degraded')
+        self.assertEqual(self.state(), 'down')
         self.write_receipt(age=-301)
         self.assertEqual(self.state(), 'unknown')
 

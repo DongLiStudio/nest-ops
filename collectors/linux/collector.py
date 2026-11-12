@@ -1,7 +1,12 @@
 """Allowlisted local checks, outbound HTTPS only; no remote command API."""
-import json,math,os,shutil,subprocess,time,urllib.request
+import json,math,os,re,shutil,subprocess,time,urllib.request
 from datetime import datetime,timedelta
 from pathlib import Path
+
+BACKUP_ID_RE=re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
+TRANSPORT_ERROR_RE=re.compile(r'^[a-z][a-z0-9_]{0,63}$')
+BACKREST_PAGE_SIZE=256
+TRANSPORT_MAX_AGE=900
 
 def run(args):
     try:return subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,timeout=8)
@@ -117,14 +122,29 @@ def backrest_job_state(job, server):
         with closing(sqlite3.connect(uri, uri=True, timeout=1)) as database:
             # Only local source records are eligible. Sync/imported records and
             # hooks are not evidence that this host completed its own backup.
-            rows = database.execute('''
+            cursor = database.execute('''
                 SELECT o.status,o.snapshot_id,o.start_time_ms,o.operation
                 FROM operations o JOIN operation_groups g ON o.ogid=g.ogid
                 WHERE g.instance_id=? AND g.plan_id=? AND g.repo_guid=?
                   AND g.original_instance_keyid='' AND o.status<>1
-                ORDER BY o.start_time_ms DESC,o.id DESC LIMIT 100
-            ''', (server, plan['id'], repos[0]['guid'])).fetchall()
-        backups = [row for row in rows if _backrest_operation_kind(row[3]) == 100]
+                ORDER BY o.start_time_ms DESC,o.id DESC
+            ''', (server, plan['id'], repos[0]['guid']))
+            backups=[]
+            # Walk pages in chronological order, filtering operation types in
+            # Python without a small SQL LIMIT before unrelated hook/index/dry
+            # run records can be discarded.
+            while len(backups)<2:
+                rows=cursor.fetchmany(BACKREST_PAGE_SIZE)
+                if not rows:
+                    break
+                for row in rows:
+                    if _backrest_operation_kind(row[3]) != 100:
+                        continue
+                    backups.append(row)
+                    if len(backups)>=2:
+                        break
+                if backups and backups[0][0]!=2:
+                    break
         if not backups:
             return 'unknown'
         latest = backups[0]
@@ -135,8 +155,9 @@ def backrest_job_state(job, server):
             return 'degraded'
         if status not in (2, 3):
             return 'unknown'
+        running = status == 2
         # A running backup does not invalidate the last completed checked copy.
-        if status == 2:
+        if running:
             completed = next((r for r in backups[1:] if r[0] in (3, 4, 5, 6, 7)), None)
             if completed is None:
                 return 'unknown'
@@ -146,11 +167,31 @@ def backrest_job_state(job, server):
                 return 'degraded'
             _, snapshot, started, _ = completed
         receipt = json.loads(Path(job['receipt']).read_text(encoding='utf-8'))
-        if (not isinstance(receipt, dict) or receipt.get('checked') is not True or
-                receipt.get('profile') != server or
+        if not isinstance(receipt, dict):
+            return 'unknown'
+        receipt_status = receipt.get('status')
+        if receipt_status not in ('success', 'failed', 'failure', 'error'):
+            return 'unknown'
+        if receipt_status in ('failed', 'failure', 'error'):
+            return 'down'
+        checked = receipt.get('checked')
+        if checked is None:
+            return 'unknown'
+        if checked is False:
+            return 'down'
+        if checked is not True:
+            return 'unknown'
+        if (receipt.get('profile') != server or
                 not isinstance(snapshot, str) or not snapshot or
                 receipt.get('snapshot') != snapshot or not isinstance(receipt.get('utc'), str)):
             return 'unknown'
+        check_mode = receipt.get('check_mode')
+        if check_mode is None:
+            return 'unknown'
+        if not isinstance(check_mode, str) or not check_mode:
+            return 'unknown'
+        if check_mode != 'read-data':
+            return 'down'
         stamp = receipt['utc']
         finished = datetime.fromisoformat(stamp[:-1] + '+00:00' if stamp.endswith('Z') else stamp)
         if finished.utcoffset() != timedelta(0) or finished.timestamp() < started / 1000 - 300:
@@ -161,7 +202,9 @@ def backrest_job_state(job, server):
         return 'unknown'
     if age < -300:
         return 'unknown'
-    return 'degraded' if age > max_age else 'up'
+    if age > max_age:
+        return 'down'
+    return 'maintenance' if running else 'up'
 
 
 def backup_job_state(job, server):
@@ -193,6 +236,7 @@ def backup_job_state(job, server):
     active = service.get('ActiveState')
     if active == 'failed':
         return 'down'
+    running = active in ('active', 'activating', 'deactivating', 'reloading')
     if active == 'inactive':
         if not service.get('Result') or not service.get('ExecMainStatus'):
             return 'unknown'
@@ -204,11 +248,31 @@ def backup_job_state(job, server):
     # On reboot systemd may forget the last exit, so rely on a persistent receipt.
     try:
         receipt = json.loads(Path(job['receipt']).read_text(encoding='utf-8'))
-        if (not isinstance(receipt, dict) or receipt.get('checked') is not True or
-                receipt.get('profile') != server or
+        if not isinstance(receipt, dict):
+            return 'unknown'
+        receipt_status = receipt.get('status')
+        if receipt_status not in ('success', 'failed', 'failure', 'error'):
+            return 'unknown'
+        if receipt_status in ('failed', 'failure', 'error'):
+            return 'down'
+        checked = receipt.get('checked')
+        if checked is None:
+            return 'unknown'
+        if checked is False:
+            return 'down'
+        if checked is not True:
+            return 'unknown'
+        if (receipt.get('profile') != server or
                 not isinstance(receipt.get('snapshot'), str) or not receipt['snapshot'].strip() or
                 not isinstance(receipt.get('utc'), str)):
             return 'unknown'
+        check_mode = receipt.get('check_mode')
+        if check_mode is None:
+            return 'unknown'
+        if not isinstance(check_mode, str) or not check_mode:
+            return 'unknown'
+        if check_mode != 'read-data':
+            return 'down'
         stamp = receipt['utc']
         completed = datetime.fromisoformat(stamp[:-1] + '+00:00' if stamp.endswith('Z') else stamp)
         if completed.utcoffset() != timedelta(0):
@@ -218,7 +282,81 @@ def backup_job_state(job, server):
         return 'unknown'
     if age < -300:
         return 'unknown'
-    return 'degraded' if age > max_age else 'up'
+    if age > max_age:
+        return 'down'
+    return 'maintenance' if running else 'up'
+
+
+def receipt_metadata(job, server):
+    """Return a bounded snapshot summary; never return paths or raw errors."""
+    if not isinstance(job, dict):
+        return None
+    path=job.get('receipt')
+    if not isinstance(path,str) or not path:
+        return None
+    try:
+        receipt=json.loads(Path(path).read_text(encoding='utf-8'))
+        if (not isinstance(receipt,dict) or receipt.get('status')!='success' or
+                receipt.get('checked') is not True or receipt.get('profile')!=server or
+                receipt.get('check_mode')!='read-data' or
+                not isinstance(receipt.get('snapshot'),str) or
+                not BACKUP_ID_RE.fullmatch(receipt['snapshot']) or
+                not isinstance(receipt.get('utc'),str)):
+            return None
+        stamp=receipt['utc']
+        finished=datetime.fromisoformat(stamp[:-1]+'+00:00' if stamp.endswith('Z') else stamp)
+        if finished.utcoffset()!=timedelta(0):
+            return None
+        now=time.time();checked=finished.timestamp()
+        if checked<0 or checked>now+300:
+            return None
+        result={'schema_version':1,'checked_at':checked,
+                'snapshot_id':receipt['snapshot'],'check_mode':'read-data'}
+        transport=transport_metadata(job.get('transport_receipt'),server,now)
+        if transport is not None:
+            result['transport']=transport
+        return result
+    except (OSError,UnicodeError,ValueError,TypeError,OverflowError):
+        return None
+
+
+def transport_metadata(path, server, now):
+    """Normalize the local no-write transport-probe receipt."""
+    if not isinstance(path,str) or not path:
+        return None
+    try:
+        receipt=json.loads(Path(path).read_text(encoding='utf-8'))
+        if (not isinstance(receipt,dict) or receipt.get('schema')!=1 or
+                receipt.get('profile')!=server or
+                receipt.get('status') not in ('up','down','unknown') or
+                not isinstance(receipt.get('checked_utc'),str)):
+            return None
+        stamp=receipt['checked_utc']
+        checked=datetime.fromisoformat(stamp[:-1]+'+00:00' if stamp.endswith('Z') else stamp)
+        if checked.utcoffset()!=timedelta(0):
+            return None
+        timestamp=checked.timestamp()
+        if timestamp<0 or timestamp>now+300:
+            return None
+        unauth=receipt.get('unauthenticated_status')
+        config=receipt.get('authenticated_config_status')
+        error=receipt.get('error_code')
+        if unauth not in (None,401) or config not in (None,'pinned'):
+            return None
+        if error is not None and (not isinstance(error,str) or not TRANSPORT_ERROR_RE.fullmatch(error)):
+            return None
+        if receipt['status']=='up' and (unauth!=401 or config!='pinned' or error is not None):
+            return None
+        state=receipt['status']
+        if now-timestamp>TRANSPORT_MAX_AGE:
+            state='down'
+            if error is None:
+                error='stale'
+        return {'checked_at':timestamp,'state':state,
+                'unauthenticated_status':unauth,'config_status':config,
+                'error_code':error}
+    except (OSError,UnicodeError,ValueError,TypeError,OverflowError):
+        return None
 
 
 def docker_command(config):
@@ -263,7 +401,15 @@ def collect(config):
                 state='unknown' if values.get('ExecMainExitTimestampMonotonic','0')=='0' else 'up' if values.get('Result')=='success' and values.get('ExecMainStatus')=='0' else 'down'
         elif service.get('process'):
             check=run(['pgrep','-x',service['process']]);state='up' if check and check.returncode==0 else 'down' if check and check.returncode==1 else 'unknown'
-        result[service['id']]={'state':state}
+        observation={'state':state}
+        if 'backup_job' in service:
+            metadata=receipt_metadata(service['backup_job'],config.get('server'))
+            if metadata is not None:
+                observation['backup']=metadata
+            elif state in ('up','maintenance'):
+                state='unknown'
+                observation['state']='unknown'
+        result[service['id']]=observation
     metrics={}
     try:metrics['load1']=round(os.getloadavg()[0],2)
     except (OSError,AttributeError):pass

@@ -8,6 +8,35 @@ tokens=Path(tmp.name)/'tokens.json';tokens.write_text('{}');os.environ['OPS_TOKE
 spec=importlib.util.spec_from_file_location('console_server',root/'server.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 sid=next(iter(m.SERVICES))
 class HistoryTests(unittest.TestCase):
+    def call_ingest(self,payload=None,*,host='demo-host',token='secret',size=None,raw=None):
+        body=raw if raw is not None else json.dumps({} if payload is None else payload).encode()
+        handler=m.Handler.__new__(m.Handler)
+        handler.path='/ingest'
+        handler.headers={'X-Server-Profile':host,'Authorization':'Bearer '+token,
+                         'Content-Length':str(len(body) if size is None else size)}
+        handler.rfile=io.BytesIO(body)
+        with patch.object(handler,'send') as send:
+            handler.do_POST()
+        return send.call_args.args
+
+    def backup_service(self,service_id='demo-host:backup',host='demo-host',max_age=93600,
+                       transport=False):
+        job={'timer':'demo.timer','service':'demo.service',
+             'receipt':'/var/lib/demo/success.json','max_age_seconds':max_age}
+        if transport:
+            job['transport_receipt']='/var/lib/demo/transport.json'
+        return {'id':service_id,'server':host,'name':'Demo backup','category':'ops',
+                'app':False,'href':None,'containers':[],'units':[],
+                'backup_job':job}
+
+    def backup_payload(self,now,snapshot='snapshot-valid',checked_at=None,
+                       transport=None):
+        value={'schema_version':1,'checked_at':now if checked_at is None else checked_at,
+               'snapshot_id':snapshot,'check_mode':'read-data'}
+        if transport is not None:
+            value['transport']=transport
+        return value
+
     def test_service_names_include_host_for_shared_tools_and_duplicates(self):
         hosts={'a':{'name':'Example A'},'b':{'name':'Example B'}}
         services={str(i):{'name':name,'server':host} for i,(name,host) in enumerate([
@@ -34,26 +63,37 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(opener.open.call_count,2)
         rows=m.DB.execute('SELECT state,kind FROM probe_attempts WHERE service=? ORDER BY id',(sid,)).fetchall()
         self.assertEqual(rows,[('down','timeout'),('up','http')])
+        self.assertEqual(m.DB.execute('SELECT state FROM spans ORDER BY id DESC LIMIT 1').fetchone()[0],'up')
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM events').fetchone()[0],0)
         self.assertEqual(m.DB.execute('SELECT count(*) FROM probe_notifiable').fetchone()[0],0)
         self.assertNotIn('SECRET',str(m.DB.execute('SELECT detail FROM spans').fetchall()))
     def test_probe_alert_after_three_cycles_and_recovery_once(self):
         service={'id':sid};now=time.time()
         for i in range(3):
-            m.record(sid,'down','timeout',now=now+i*60);m.probe_cycle(service,False,now+i*60)
+            state=m.probe_cycle(service,False,'timeout',now=now+i*60)
+            self.assertEqual(state,'degraded' if i<2 else 'down')
             self.assertEqual(m.DB.execute('SELECT count(*) FROM probe_notifiable').fetchone()[0],int(i==2))
-        m.probe_cycle(service,False,now+125)
+        m.probe_cycle(service,False,'timeout',now=now+185)
         self.assertEqual(m.DB.execute('SELECT count(*) FROM probe_notifiable').fetchone()[0],1)
-        m.record(sid,'up','HTTP 200',now=now+130);m.probe_cycle(service,True,now+130)
-        m.probe_cycle(service,True,now+140)
+        m.probe_cycle(service,True,'HTTP 200',now=now+190)
+        m.probe_cycle(service,True,'HTTP 200',now=now+200)
         self.assertEqual(m.DB.execute('SELECT count(*) FROM probe_notifiable').fetchone()[0],2)
+        self.assertEqual([r[0] for r in m.DB.execute('SELECT state FROM spans ORDER BY id')],
+                         ['degraded','down','up'])
     def test_probe_failure_streak_breaks_on_success_and_gap(self):
         service={'id':sid};now=time.time()
-        m.record(sid,'down',now=now);m.probe_cycle(service,False,now)
-        m.record(sid,'up',now=now+60);m.probe_cycle(service,True,now+60)
-        m.record(sid,'down',now=now+120);m.probe_cycle(service,False,now+120)
-        m.probe_cycle(service,False,now+400)
+        self.assertEqual(m.probe_cycle(service,False,now=now),'degraded')
+        self.assertEqual(m.probe_cycle(service,True,now=now+60),'up')
+        self.assertEqual(m.probe_cycle(service,False,now=now+120),'degraded')
+        self.assertEqual(m.probe_cycle(service,False,now=now+400),'degraded')
         self.assertEqual(m.DB.execute('SELECT failures FROM probe_alert_state WHERE service=?',(sid,)).fetchone()[0],1)
         self.assertEqual(m.DB.execute('SELECT count(*) FROM probe_notifiable').fetchone()[0],0)
+    def test_healthy_probe_cycles_do_not_create_events_or_notices(self):
+        service={'id':sid}
+        for offset in (0,60,120):
+            self.assertEqual(m.probe_cycle(service,True,'HTTP 200',now=1000+offset),'up')
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM events').fetchone()[0],0)
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM notices').fetchone()[0],0)
     def test_probe_notification_gate_and_no_orphan_recovery(self):
         service=dict(m.SERVICES[sid],probe={'url':'https://example.invalid/'})
         config=Path(tmp.name)/'notify-test.json'
@@ -61,14 +101,89 @@ class HistoryTests(unittest.TestCase):
         smtp=unittest.mock.MagicMock();smtp.__enter__.return_value=smtp;smtp.send_message.return_value={}
         now=time.time()-500
         with patch.dict(m.SERVICES,{sid:service}),patch.dict(os.environ,{'OPS_NOTIFY':str(config)}),patch.object(m.smtplib,'SMTP_SSL',return_value=smtp):
-            m.record(sid,'down',now=now);m.probe_cycle(service,False,now)
-            m.record(sid,'up',now=now+60);m.probe_cycle(service,True,now+60)
+            m.probe_cycle(service,False,now=now)
+            m.probe_cycle(service,True,now=now+60)
             m.notify_pending();self.assertEqual(smtp.send_message.call_count,0)
             for i in range(3):
-                m.record(sid,'down',now=now+120+i*60);m.probe_cycle(service,False,now+120+i*60)
+                m.probe_cycle(service,False,now=now+120+i*60)
             m.notify_pending();m.notify_pending();self.assertEqual(smtp.send_message.call_count,1)
-            m.record(sid,'up',now=now+310);m.probe_cycle(service,True,now+310)
+            m.probe_cycle(service,True,now=now+310)
             m.notify_pending();m.notify_pending();self.assertEqual(smtp.send_message.call_count,2)
+    def test_confirmed_fault_is_not_repeated_across_neutral_states(self):
+        config=Path(tmp.name)/'notify-neutral.json'
+        config.write_text(json.dumps(dict(sender='monitor@example.invalid',
+            recipient='owner@example.invalid',address='smtps://smtp.example.invalid:465',
+            username='test',password='fixture')))
+        smtp=unittest.mock.MagicMock();smtp.__enter__.return_value=smtp
+        smtp.send_message.return_value={}
+        now=time.time()-300
+        states=[('down',now),('maintenance',now+30),('unknown',now+60),
+                ('down',now+90),('up',now+120)]
+        with patch.dict(os.environ,{'OPS_NOTIFY':str(config)}),patch.object(
+                m.smtplib,'SMTP_SSL',return_value=smtp):
+            for state,stamp in states:
+                m.record(sid,state,now=stamp)
+                with patch.object(m.time,'time',return_value=stamp+1):
+                    m.notify_pending()
+        self.assertEqual(smtp.send_message.call_count,2)
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM notices').fetchone()[0],5)
+
+    def test_maintenance_and_unknown_transitions_do_not_send_notifications(self):
+        config=Path(tmp.name)/'notify-neutral-only.json'
+        config.write_text(json.dumps(dict(sender='monitor@example.invalid',
+            recipient='owner@example.invalid',address='smtps://smtp.example.invalid:465',
+            username='test',password='fixture')))
+        smtp=unittest.mock.MagicMock();smtp.__enter__.return_value=smtp
+        smtp.send_message.return_value={}
+        now=time.time()-300
+        with patch.dict(os.environ,{'OPS_NOTIFY':str(config)}),patch.object(
+                m.smtplib,'SMTP_SSL',return_value=smtp):
+            for state,offset in [('up',0),('maintenance',30),('unknown',60)]:
+                m.record(sid,state,now=now+offset)
+                with patch.object(m.time,'time',return_value=now+offset+1):
+                    m.notify_pending()
+        self.assertEqual(smtp.send_message.call_count,0)
+        self.assertEqual(m.DB.execute(
+            "SELECT count(*) FROM notices WHERE status='skipped'").fetchone()[0],2)
+    def test_statistics_exclude_backup_maintenance_from_availability_and_incidents(self):
+        result=m.statistics([(0,60,'up'),(60,90,'maintenance')],0,90)
+        self.assertEqual(result['availability'],100.0)
+        self.assertEqual(result['coverage'],100.0)
+        self.assertEqual(result['known_seconds'],90)
+        self.assertEqual(result['down_seconds'],0)
+        self.assertEqual(result['maintenance_seconds'],30)
+    def test_smtp_errors_are_sanitized_and_classified(self):
+        import socket,ssl
+        cases=[
+            (socket.gaierror('SECRET-HOST'),'dns'),
+            (TimeoutError('SECRET-TIMEOUT'),'timeout'),
+            (ssl.SSLError('SECRET-TLS'),'tls'),
+            (m.smtplib.SMTPAuthenticationError(535,b'SECRET-AUTH'),'auth'),
+            (ConnectionResetError('SECRET-CONNECTION'),'connection'),
+            (ValueError('SECRET-SEND'),'send')]
+        for error,kind in cases:
+            with self.subTest(kind=kind):
+                self.assertEqual(m.smtp_error_kind(error),kind)
+                self.assertNotIn('SECRET',kind)
+        self.assertEqual([row[1] for row in m.DB.execute('PRAGMA table_info(notices)')][-1],
+                         'error_kind')
+    def test_smtp_send_failure_keeps_failed_status_without_error_text(self):
+        import socket
+        service=dict(m.SERVICES[sid],probe={'url':'https://example.invalid/'})
+        config=Path(tmp.name)/'notify-failure.json'
+        config.write_text(json.dumps(dict(sender='monitor@example.invalid',
+            recipient='owner@example.invalid',address='smtps://smtp.example.invalid:465',
+            username='test',password='fixture')))
+        now=time.time()-500
+        with patch.dict(m.SERVICES,{sid:service}),patch.dict(os.environ,{'OPS_NOTIFY':str(config)}),patch.object(
+                m.smtplib,'SMTP_SSL',side_effect=socket.gaierror('SECRET-HOST')):
+            for i in range(3):
+                m.probe_cycle(service,False,'入口检查失败 · dns',now=now+i*60)
+            m.notify_pending()
+        event_id=m.DB.execute('SELECT down_event FROM probe_alert_state WHERE service=?',(sid,)).fetchone()[0]
+        status,error_kind=m.DB.execute('SELECT status,error_kind FROM notices WHERE event=?',(event_id,)).fetchone()
+        self.assertEqual((status,error_kind),('failed','dns'))
+        self.assertNotIn('SECRET',' '.join(str(row) for row in m.DB.execute('SELECT * FROM notices')))
     def test_event_pagination_beyond_200_and_stable_anchor(self):
         now=time.time()
         with m.DB:
@@ -88,6 +203,20 @@ class HistoryTests(unittest.TestCase):
         for args in [('invalid',1,15),('24h',0,15),('24h',1,101)]:
             with self.assertRaises(ValueError):m.event_page(*args)
         with self.assertRaises(ValueError):m.event_page(service='retired')
+    def test_event_page_keeps_recovery_across_neutral_states(self):
+        now=time.time()
+        with m.DB:
+            down=m.DB.execute("INSERT INTO events(service,time,old,state,detail) "
+                              "VALUES(?,?,'up','down','failed')",(sid,now-30)).lastrowid
+            m.DB.execute("INSERT INTO events(service,time,old,state,detail) "
+                         "VALUES(?,?,'down','maintenance','running')",(sid,now-20))
+            m.DB.execute("INSERT INTO events(service,time,old,state,detail) "
+                         "VALUES(?,?,'maintenance','unknown','gap')",(sid,now-10))
+            recovered=m.DB.execute("INSERT INTO events(service,time,old,state,detail) "
+                                   "VALUES(?,?,'unknown','up','recovered')",(sid,now)).lastrowid
+        page=m.event_page('24h',1,15,sid)
+        self.assertEqual([item['id'] for item in page['items']],[recovered,down])
+        self.assertEqual(m.previous_notifiable_state(sid,recovered),'down')
     def test_password_and_oidc_sessions(self):
         handler=m.Handler.__new__(m.Handler);handler.headers={'Cookie':'session=opaque'}
         for user in [{'name':'Homepage','id':'homepage'},{'email':'operator@example.com'},{'id':'opaque-subject'}]:
@@ -113,10 +242,341 @@ class HistoryTests(unittest.TestCase):
             with self.assertRaises(ValueError):m.apply_private_entries(services,path)
     def setUp(self):
         with m.LOCK,m.DB:
-            for table in ('probe_attempts','probe_alert_state','probe_notifiable'):m.DB.execute('DELETE FROM '+table)
-        with m.LOCK,m.DB:m.DB.execute('DELETE FROM spans');m.DB.execute('DELETE FROM events');m.DB.execute('DELETE FROM notices')
+            for table in ('probe_attempts','probe_alert_state','probe_notifiable',
+                          'hosts','host_health','backup_metadata'):
+                m.DB.execute('DELETE FROM '+table)
+            m.DB.execute('DELETE FROM spans')
+            m.DB.execute('DELETE FROM events')
+            m.DB.execute('DELETE FROM notices')
         m.SNAPSHOT_CACHE.clear();m.HOUSEHOLD_CACHE=None
         with m.LOCK,m.DB:m.DB.execute('DELETE FROM samples')
+    def test_ingest_rejects_missing_and_wrong_tokens_without_writes(self):
+        payload={'services':{sid:{'state':'up'}},'metrics':{'load1':0.5}}
+        with patch.dict(m.TOKENS,{'demo-host':'secret'},clear=True):
+            for token in ('', 'wrong'):
+                with self.subTest(token=token):
+                    self.assertEqual(self.call_ingest(payload,token=token)[0],401)
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM hosts').fetchone()[0],0)
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM spans').fetchone()[0],0)
+
+    def test_ingest_rejects_cross_host_service_and_does_not_leak_metrics(self):
+        own='host-a:web';other='host-b:web';own_host='host-a';other_host='host-b'
+        services={
+            own:{'id':own,'server':own_host,'name':'A','category':'ops',
+                 'app':False,'href':None,'containers':[],'units':[]},
+            other:{'id':other,'server':other_host,'name':'B','category':'ops',
+                   'app':False,'href':None,'containers':[],'units':[]},
+        }
+        with patch.dict(m.SERVICES,services,clear=True),patch.dict(
+                m.TOKENS,{own_host:'one',other_host:'two'},clear=True):
+            status=self.call_ingest({'services':{other:{'state':'down'}}},
+                                    host=own_host,token='one')[0]
+            self.assertEqual(status,400)
+            self.assertEqual(self.call_ingest(
+                {'services':{},'metrics':{'load1':11,'disk_percent':20}},
+                host=own_host,token='one')[0],200)
+            self.assertEqual(self.call_ingest(
+                {'services':{},'metrics':{'load1':22,'memory_percent':30}},
+                host=other_host,token='two')[0],200)
+        self.assertEqual(json.loads(m.DB.execute(
+            'SELECT metrics FROM hosts WHERE id=?',(own_host,)).fetchone()[0]),
+            {'load1':11,'disk_percent':20})
+        self.assertEqual(json.loads(m.DB.execute(
+            'SELECT metrics FROM hosts WHERE id=?',(other_host,)).fetchone()[0]),
+            {'load1':22,'memory_percent':30})
+        self.assertEqual(m.DB.execute(
+            'SELECT count(*) FROM spans WHERE service=?',(other,)).fetchone()[0],0)
+
+    def test_ingest_accepts_only_whitelisted_metrics_and_invalidates_snapshot(self):
+        host=m.SERVICES[sid]['server']
+        with patch.dict(m.TOKENS,{host:'secret'},clear=True):
+            initial=m.snapshot('24h')
+            status,_=self.call_ingest(
+                {'services':{sid:{'state':'up'}},
+                 'metrics':{'load1':0.5,'memory_percent':30,'disk_percent':40,
+                            'uptime_seconds':50,'unexpected':999,'token':'SECRET'}},
+                host=host)
+            self.assertEqual(status,200)
+        self.assertEqual(json.loads(m.DB.execute(
+            'SELECT metrics FROM hosts WHERE id=?',(host,)).fetchone()[0]),
+            {'load1':0.5,'memory_percent':30.0,'disk_percent':40.0,'uptime_seconds':50.0})
+        refreshed=m.snapshot('24h')
+        self.assertIsNot(initial,refreshed)
+        self.assertEqual(next(s for s in refreshed['services'] if s['id']==sid)['state'],'up')
+
+    def test_ingest_rejects_oversized_body(self):
+        host=m.SERVICES[sid]['server']
+        with patch.dict(m.TOKENS,{host:'secret'},clear=True):
+            status,body=self.call_ingest(
+                {'services':{},'metrics':{}},host=host,size=32769,
+                raw=b'x'*32769)
+        self.assertEqual(status,400)
+        self.assertFalse(body.get('accepted',True))
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM hosts').fetchone()[0],0)
+
+    def test_ingest_schema_rejects_unknown_fields_and_is_atomic(self):
+        host=m.SERVICES[sid]['server']
+        invalid=[
+            {'services':{},'metrics':{},'unexpected':True},
+            {'services':{},'metrics':[]},
+            {'metrics':{}},
+            {'services':{'missing:service':{'state':'up'}},'metrics':{}},
+            {'services':{sid:{'state':'up','note':'private'}},'metrics':{}},
+            {'services':{sid:{'state':'up','backup':{}}},'metrics':{}},
+        ]
+        with patch.dict(m.TOKENS,{host:'secret'},clear=True):
+            for payload in invalid:
+                with self.subTest(payload=payload):
+                    status,body=self.call_ingest(payload,host=host)
+                    self.assertEqual(status,400)
+                    self.assertFalse(body.get('accepted',True))
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM hosts').fetchone()[0],0)
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM spans').fetchone()[0],0)
+
+    def test_maintenance_state_is_reserved_for_backup_services(self):
+        service=next(item for item in m.SERVICES.values()
+                     if not item.get('backup_job') and not item.get('probe'))
+        host=service['server']
+        with patch.dict(m.TOKENS,{host:'secret'},clear=True):
+            status,body=self.call_ingest(
+                {'services':{service['id']:{'state':'maintenance'}}},host=host)
+        self.assertEqual(status,400)
+        self.assertFalse(body.get('accepted',True))
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM hosts').fetchone()[0],0)
+        self.assertEqual(m.DB.execute(
+            'SELECT count(*) FROM spans WHERE service=?',
+            (service['id'],)).fetchone()[0],0)
+
+    def test_ingest_validates_all_observations_before_writing_any(self):
+        host='demo-host';first='demo-host:first';second='demo-host:second'
+        services={
+            first:{'id':first,'server':host,'name':'First','category':'ops',
+                   'app':False,'href':None,'containers':[],'units':[]},
+            second:{'id':second,'server':host,'name':'Second','category':'ops',
+                    'app':False,'href':None,'containers':[],'units':[]},
+        }
+        with patch.dict(m.SERVICES,services,clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True):
+            status,body=self.call_ingest({'services':{
+                first:{'state':'up'},second:{'state':'up','unexpected':True}},
+                'metrics':{'load1':0.1}},host=host)
+        self.assertEqual(status,400)
+        self.assertFalse(body.get('accepted',True))
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM hosts').fetchone()[0],0)
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM spans').fetchone()[0],0)
+
+    def test_invalid_or_forged_backup_metadata_does_not_replace_last_valid(self):
+        service_id='backup:demo'
+        host='demo-host'
+        service={'id':service_id,'server':host,'name':'Demo backup',
+                 'category':'ops','app':False,'href':None,'containers':[],'units':[],
+                 'backup_job':{'timer':'demo.timer','service':'demo.service',
+                               'receipt':'/var/lib/demo/success.json'}}
+        now=time.time()-10
+        valid={'backup':{'schema_version':1,'checked_at':now,'snapshot_id':'snapshot-valid',
+                         'check_mode':'read-data','transport':{
+                             'checked_at':now,'state':'up','unauthenticated_status':401,
+                             'config_status':'pinned','error_code':None}}}
+        invalid_values=[
+            {'schema_version':1,'checked_at':now,'snapshot_id':'snapshot-invalid',
+             'check_mode':'metadata'},
+            {'schema_version':1,'checked_at':now,'snapshot_id':'snapshot-invalid',
+             'check_mode':'read-data','transport':{
+                 'checked_at':now,'state':'up','unauthenticated_status':None,
+                 'config_status':'pinned','error_code':None}},
+            {'schema_version':1,'checked_at':now,'snapshot_id':'snapshot-invalid',
+             'check_mode':'read-data','transport':{
+                 'checked_at':now,'state':'down','unauthenticated_status':500,
+                 'config_status':'pinned','error_code':'tunnel_closed'}},
+            {'schema_version':1,'checked_at':now,'snapshot_id':'snapshot-invalid',
+             'check_mode':'read-data','receipt_path':'/private/restic/last-success.json'},
+        ]
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True):
+            status,_=self.call_ingest({'services':{service_id:{
+                'state':'up','backup':valid['backup']}}},host=host)
+            self.assertEqual(status,200)
+            for backup in invalid_values:
+                status,body=self.call_ingest({'services':{service_id:{
+                    'state':'down','backup':backup}}},host=host)
+                self.assertEqual(status,200)
+                self.assertEqual(body['rejected_backup_metadata'],1)
+        row=m.DB.execute(
+            'SELECT metadata_state,snapshot_id,check_mode,metadata_json '
+            'FROM backup_metadata WHERE service=? AND host=?',
+            (service_id,host)).fetchone()
+        self.assertEqual(row[:3],('invalid','snapshot-valid','read-data'))
+        self.assertEqual(json.loads(row[3])['snapshot_id'],'snapshot-valid')
+        self.assertNotIn('/private',str(row))
+
+    def test_normal_and_maintenance_require_current_fresh_safe_metadata(self):
+        host='demo-host';now=time.time()-1
+        ids=['backup:missing','backup:maintenance','backup:expired-up',
+             'backup:expired-maintenance']
+        services={sid:self.backup_service(sid,host,max_age=60) for sid in ids}
+        observations={
+            ids[0]:{'state':'up'},
+            ids[1]:{'state':'maintenance','backup':self.backup_payload(
+                now,snapshot='fresh',checked_at=now-30)},
+            ids[2]:{'state':'up','backup':self.backup_payload(
+                now,snapshot='stale',checked_at=now-61)},
+            ids[3]:{'state':'maintenance','backup':self.backup_payload(
+                now,snapshot='stale',checked_at=now-61)},
+        }
+        with patch.dict(m.SERVICES,services,clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True):
+            status,body=self.call_ingest({'services':observations},host=host)
+            self.assertEqual(status,200)
+            self.assertEqual(body['downgraded_backup_states'],3)
+            items={item['id']:item for item in m.build_snapshot('24h')['services']}
+        self.assertEqual(items[ids[0]]['state'],'unknown')
+        self.assertEqual(items[ids[0]]['backup']['metadata_state'],'missing')
+        self.assertEqual(items[ids[1]]['state'],'maintenance')
+        self.assertEqual(items[ids[1]]['backup']['metadata_state'],'valid')
+        self.assertEqual(items[ids[2]]['state'],'down')
+        self.assertEqual(items[ids[3]]['state'],'down')
+
+    def test_backup_metadata_cannot_roll_back_newer_snapshot_evidence(self):
+        service_id='backup:ordered';host='demo-host';now=time.time()-2
+        service=self.backup_service(service_id,host)
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True):
+            first=self.backup_payload(now,snapshot='snapshot-new',checked_at=now-10)
+            self.assertEqual(self.call_ingest({'services':{
+                service_id:{'state':'up','backup':first}}},host=host)[0],200)
+            older=self.backup_payload(now,snapshot='snapshot-old',checked_at=now-20)
+            status,body=self.call_ingest({'services':{
+                service_id:{'state':'up','backup':older}}},host=host)
+            self.assertEqual(status,200)
+            self.assertEqual(body['rejected_backup_metadata'],1)
+            conflicting=self.backup_payload(now,snapshot='snapshot-conflict',
+                                            checked_at=now-10)
+            status,body=self.call_ingest({'services':{
+                service_id:{'state':'up','backup':conflicting}}},host=host)
+            self.assertEqual(status,200)
+            self.assertEqual(body['rejected_backup_metadata'],1)
+        row=m.DB.execute(
+            'SELECT metadata_state,snapshot_id,metadata_json FROM backup_metadata '
+            'WHERE service=? AND host=?',(service_id,host)).fetchone()
+        self.assertEqual(row[:2],('invalid','snapshot-new'))
+        self.assertEqual(json.loads(row[2])['snapshot_id'],'snapshot-new')
+        self.assertEqual(m.DB.execute(
+            'SELECT state FROM spans WHERE service=? ORDER BY id DESC LIMIT 1',
+            (service_id,)).fetchone()[0],'unknown')
+
+    def test_stale_transport_is_projected_to_backup_abnormal(self):
+        service_id='backup:transport';host='demo-host';now=time.time()-1
+        service=self.backup_service(service_id,host,transport=True)
+        transport={'checked_at':now-901,'state':'up','unauthenticated_status':401,
+                   'config_status':'pinned','error_code':None}
+        metadata=self.backup_payload(now,snapshot='snapshot-fresh',
+                                     checked_at=now-30,transport=transport)
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True):
+            status,_=self.call_ingest({'services':{
+                service_id:{'state':'up','backup':metadata}}},host=host)
+            self.assertEqual(status,200)
+            view=m.build_snapshot('24h')
+        item=view['services'][0]
+        self.assertEqual(item['state'],'down')
+        self.assertTrue(item['backup']['transport_stale'])
+        self.assertEqual(item['backup']['transport']['state'],'down')
+        self.assertEqual(item['backup']['transport']['error_code'],'stale')
+        self.assertEqual(view['backup_summary']['up'],0)
+        self.assertEqual(view['backup_summary']['abnormal'],1)
+        self.assertEqual(view['backup_summary']['transport_down'],1)
+
+    def test_transport_failure_notifies_once_and_unknown_preserves_recovery(self):
+        service_id='backup:transport-notify';host='demo-host';now=time.time()-300
+        service=self.backup_service(service_id,host,transport=True)
+        config=Path(tmp.name)/'notify-transport.json'
+        config.write_text(json.dumps(dict(
+            sender='monitor@example.invalid',recipient='owner@example.invalid',
+            address='smtps://smtp.example.invalid:465',
+            username='test',password='fixture')))
+        smtp=unittest.mock.MagicMock();smtp.__enter__.return_value=smtp
+        smtp.send_message.return_value={}
+        transport_down={'checked_at':now,'state':'down',
+                        'unauthenticated_status':None,
+                        'config_status':None,'error_code':'tunnel_closed'}
+        transport_up={'checked_at':now+180,'state':'up',
+                      'unauthenticated_status':401,
+                      'config_status':'pinned','error_code':None}
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True),patch.dict(
+                os.environ,{'OPS_NOTIFY':str(config)}),patch.object(
+                m.smtplib,'SMTP_SSL',return_value=smtp):
+            for state,stamp,transport in (
+                    ('up',now,transport_down),
+                    ('maintenance',now+60,transport_down),
+                    ('unknown',now+120,transport_down),
+                    ('up',now+180,transport_up)):
+                payload=self.backup_payload(
+                    stamp,snapshot='snapshot-valid',checked_at=now+180,
+                    transport=transport)
+                status,_=self.call_ingest({'services':{service_id:{
+                    'state':state,'backup':payload}}},host=host)
+                self.assertEqual(status,200)
+                with patch.object(m.time,'time',return_value=stamp+1):
+                    m.notify_pending()
+        self.assertEqual(smtp.send_message.call_count,2)
+        self.assertEqual([row[0] for row in m.DB.execute(
+            'SELECT state FROM events WHERE service=? ORDER BY id',
+            (service_id,))],['down','unknown','up'])
+
+    def test_public_snapshot_hides_private_monitor_configuration_and_flags_service(self):
+        private={'id':'private:backup','server':'demo-host','name':'Private backup',
+                 'category':'开发与运维','app':False,'href':None,'containers':[],'units':[],
+                 'process':'backup-process',
+                 'backup_job':{'receipt':'/private/restic/last-success.json',
+                               'config':'/private/restic/config.json'},
+                 'probe':{'url':'https://private.example.invalid/hidden'}}
+        with patch.dict(m.SERVICES,{'private:backup':private},clear=True):
+            item=m.build_snapshot('24h')['services'][0]
+        self.assertNotIn('backup_job',item)
+        self.assertNotIn('probe',item)
+        self.assertTrue(item['is_backup'])
+        self.assertTrue(item['is_probe'])
+        self.assertNotIn('/private/',json.dumps(item))
+        self.assertNotIn('private.example',json.dumps(item))
+    def test_backup_summary_counts_snapshot_and_transport_without_crashing(self):
+        service={'id':'demo:backup','server':'demo-host','name':'Backup',
+                 'category':'ops','app':False,'href':None,'containers':[],'units':[],
+                 'backup_job':{'timer':'demo.timer','service':'demo.service',
+                               'receipt':'/var/lib/demo/health.json'}}
+        now=time.time();metadata={'schema_version':1,'checked_at':now-30,
+                                  'snapshot_id':'snapshot-1','check_mode':'read-data',
+                                  'transport':{'checked_at':now-20,'state':'down',
+                                               'unauthenticated_status':None,
+                                               'config_status':None,
+                                               'error_code':'tunnel_closed'}}
+        with patch.dict(m.SERVICES,{'demo:backup':service},clear=True):
+            m.update_backup_metadata('demo:backup','demo-host',{'backup':metadata},now)
+            summary=m.build_snapshot('24h')['backup_summary']
+        self.assertEqual(summary['registered'],1)
+        self.assertEqual(summary['metadata_valid'],1)
+        self.assertEqual(summary['transport_down'],1)
+        self.assertEqual(summary['abnormal'],1)
+
+    def test_smtp_failure_retries_stop_after_five_attempts(self):
+        config=Path(tmp.name)/'notify-retry.json'
+        config.write_text(json.dumps(dict(sender='monitor@example.invalid',
+            recipient='owner@example.invalid',address='smtps://smtp.example.invalid:465',
+            username='test',password='fixture')))
+        now=time.time()-4000
+        with m.DB:
+            event_id=m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES(?,?,'up','down','test')",(sid,now)).lastrowid
+        with patch.dict(os.environ,{'OPS_NOTIFY':str(config)}),patch.object(
+                m.smtplib,'SMTP_SSL',side_effect=ConnectionRefusedError('SECRET-CONNECTION')) as smtp:
+            for attempt in range(7):
+                with patch.object(m.time,'time',return_value=now+attempt*301):
+                    m.notify_pending()
+        self.assertEqual(smtp.call_count,5)
+        status,attempts,error_kind=m.DB.execute(
+            'SELECT status,attempts,error_kind FROM notices WHERE event=?',(event_id,)).fetchone()
+        self.assertEqual((status,attempts,error_kind),('failed',5,'connection'))
+        self.assertNotIn('SECRET',str(m.DB.execute('SELECT * FROM notices').fetchall()))
+
     def test_snapshot_cache_revision_and_expiry(self):
         with patch.object(m,'build_snapshot',wraps=m.build_snapshot) as build:
             first=m.snapshot('24h');self.assertIs(first,m.snapshot('24h'));self.assertEqual(build.call_count,1)

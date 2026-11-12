@@ -1,5 +1,9 @@
 # Status
 
+2026-11-12：NestOps 备份运行态、只读“备份”页与安全回传协议已在源码完成统一。中心启动时校验互斥监测配置；ingest 只接受严格白名单字段，整包校验后才写入，备份 `up`/`maintenance` 必须绑定本次有效且未过期的安全快照，旧快照不能回滚新值；上传通路明确失败或超过 15 分钟会投影为 `down`。SQLite 只持久化有界备份元数据，公开快照不返回本地路径或令牌。UI 区分当前/上次有效快照、缺失/无效元数据、筛选空态和异常上传通路，并保持只读，无立即备份、恢复或删除入口。`maintenance`/`unknown` 不发送邮件且不打断已确认事故的恢复语义；Backrest 操作历史按 256 条分页查找真实备份。后端 49 项、采集器 59 项、前端与加载回归、Python/JS 语法、1525 份公开来源校验及公开值下的三份 Compose 解析通过；当前 Windows 无 Ruby，macOS Ruby 语法与 Minitest 保留为 Mac 部署前门禁。未部署、未连接生产、未提交 Git。
+
+macOS canonical collector 新增配置驱动的 launchd `backup_job`：只读取 root-owned 公共 plist/回执，固定 canonical Ruby backup 参数向量、plist SHA-256、每日 04:00 日程和安全时间字段；运行中保留 `maintenance`，失败/过期判 `down`，缺失/损坏判 `unknown`，上报仅含有界备份/transport 元数据。采集器 52 项回归和仓库 verify 通过；当前 Windows 环境无 Ruby，Ruby Minitest 与语法检查保留为 Mac 部署前门禁，尚未部署。
+
 Linux/NAS backup_job 新增显式 scheduler=backrest：只读核对本机实例、计划启用日程、仓库GUID、最新真实备份和同快照完整检查回执；远端同步、钩子、索引、待执行与dry run不充当成功证据，真实失败优先于旧成功。兼容原systemd分支；不读取备份密码、不执行备份或写操作历史。新增17项Backrest回归，连同原28项采集器回归共45项通过；生产部署需独立验收。
 
 Linux/NAS 采集器新增可选 backup_job：联合观察 systemd timer、最近 service 结果和持久成功回执，区分正常 oneshot 等待、运行重试、失败、回执过期与未知；配置生成器同步允许该字段。Linux 私有采集配置可选 docker_binary，显式路径须为可信绝对可执行文件，不可用时显示未知且不回退；默认发现逻辑保持。回执校验限定宿主身份、校验成功、快照和 UTC 时间，重启不丢失持久成功证据；systemd 最近失败可能在重启后清空，此时只按旧成功回执与时效判断，不宣称失败跨重启持久化。28 项采集器回归、27 项后端回归、三项前端回归、JS 语法、1525 份上游来源/脱敏门禁和临时合成配置的三份 Compose 解析通过。采集器不执行备份或读取凭据；UI、后端和公开示例目录保持。生产部署验收独立记录。

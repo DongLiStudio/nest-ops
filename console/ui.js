@@ -2,6 +2,7 @@
 (()=>{
  if(window.__homeConsole)return;window.__homeConsole=true;
  const labels={up:'正常',down:'不可用',degraded:'异常',unknown:'未知',maintenance:'维护'};
+ const stateLabel=(state,service)=>state==='maintenance'&&service?.is_backup?'备份运行中':labels[state];
  let data,tab='services',selectedHost='',filterHost='',listPage=1,selectedService='',query='',unknownExpanded=false,windowKey='24h',only='all',busy=false;
  const latencyCache=new Map(),latencyRequests=new Map();
  let ready=false,staging=false,loadController,loadGeneration=0,householdData={},householdPending=false,sessionGeneration=0;
@@ -21,7 +22,30 @@
  const dateFormatter=new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}),stampCache=new Map();
  const stamp=t=>{if(!t)return '尚未采集';if(stampCache.has(t))return stampCache.get(t);if(stampCache.size>=2048)stampCache.clear();const text=dateFormatter.format(new Date(t*1000));stampCache.set(t,text);return text;};
  const duration=s=>s>=3600?(s/3600).toFixed(1)+' 小时':Math.round(s/60)+' 分钟';
- const mark=(state)=>{const n=el('span','ops-state ops-'+state,labels[state]);return n;};
+ const mark=(state,service)=>{const n=el('span','ops-state ops-'+state,stateLabel(state,service));return n;};
+  const backupUi={
+   effectiveState(service){return service?.backup?.transport?.state==='down'?'down':(service?.state||'unknown');},
+   isAbnormal(service){const state=service?.backup?.transport?.state==='down'?'down':(service?.state||'unknown');return ['down','degraded'].includes(state);},
+   snapshotHeading(service){
+    const backup=service?.backup||{};
+    if(backup.snapshot_id&&['up','maintenance'].includes(service?.state)&&backup.metadata_state==='valid')return '当前已检查快照';
+    if(backup.snapshot_id)return '上次有效快照';
+    return '尚无有效快照';
+   },
+   metadataNotice(backup){
+    const state=backup?.metadata_state,fallback=backup?.last_valid_at?'当前展示上次有效快照。':'当前没有可展示的有效快照。';
+    if(state==='valid')return '本次安全元数据有效。';
+    if(state==='missing')return '本次未收到安全元数据。'+fallback;
+    if(state==='invalid')return '本次安全元数据无效，已予拒绝。'+fallback;
+    return '安全元数据状态未知。'+fallback;
+   },
+   emptyMessage(allCount,jobCount,noMetadata){
+    if(allCount===0)return '尚未登记任何备份来源。';
+    if(jobCount===0)return '没有符合当前筛选条件的备份来源。';
+    if(noMetadata)return '备份来源已登记，但尚未收到任何安全元数据。';
+    return '';
+   }
+  };/* backup-ui-end */
  const hostName=id=>data.servers.find(h=>h.id===id)?.name||id;
  const resetScroll=()=>{window.scrollTo(0,0);for(let n=root.parentElement;n;n=n.parentElement)if(n.scrollTop)n.scrollTop=0;};
  const goService=sid=>{selectedService=sid;render();resetScroll();};
@@ -32,7 +56,7 @@
   let active=s.bars.length-1;const info=el('span','ops-bar-info');info.hidden=true;info.setAttribute('role','status');
   const show=i=>{active=Math.max(0,Math.min(s.bars.length-1,i));info.textContent=row.children[active].getAttribute('aria-label');info.hidden=false;};
   for(const [i,bar] of s.bars.entries()){const n=el('span','ops-bar ops-'+bar.state);n.setAttribute('role','img');n.onclick=()=>show(i);n.onmouseenter=()=>show(i);n.onmouseleave=()=>{info.hidden=true;};
-   const label=stamp(bar.start)+' 至 '+stamp(bar.end)+' · '+labels[bar.state]+' · 可用率 '+pct(bar.availability)+' · 覆盖 '+pct(bar.coverage);
+   const label=stamp(bar.start)+' 至 '+stamp(bar.end)+' · '+stateLabel(bar.state,s)+' · 可用率 '+pct(bar.availability)+' · 覆盖 '+pct(bar.coverage);
    n.setAttribute('aria-label',label);row.append(n);}
   row.append(info);row.onkeydown=e=>{if(['ArrowLeft','ArrowRight','Enter',' '].includes(e.key)){e.preventDefault();show(active+(e.key==='ArrowLeft'?-1:e.key==='ArrowRight'?1:0));}else if(e.key==='Escape')info.hidden=true;};row.onblur=()=>{info.hidden=true;};return row;
  };
@@ -49,12 +73,23 @@
   const href=safeHref(s.href);if(!href)return null;
   const a=el('a','ops-open','打开');a.href=href;a.target=href.startsWith('hometunnel:')?'_self':'_blank';a.rel='noopener noreferrer';a.setAttribute('aria-label','打开 '+s.name);return a;
  };
- const filtered=services=>services.filter(s=>(!(selectedHost||filterHost)||s.server===(selectedHost||filterHost))&&(!query||(s.name+' '+hostName(s.server)).toLowerCase().includes(query.toLowerCase()))&&(only==='all'||only==='abnormal'&&['down','degraded'].includes(s.state)||only==='unknown'&&s.state==='unknown'));
+  const filtered=services=>services.filter(s=>(!(selectedHost||filterHost)||s.server===(selectedHost||filterHost))&&(!query||(s.name+' '+hostName(s.server)).toLowerCase().includes(query.toLowerCase()))&&(only==='all'||only==='abnormal'&&backupUi.isAbnormal(s)||only==='unknown'&&s.state==='unknown'));
  const sortedServices=items=>[...items].sort((a,b)=>{
   const av=Number.isFinite(a.availability)?a.availability:Infinity,bv=Number.isFinite(b.availability)?b.availability:Infinity;
   return (av===bv?0:av-bv)||(a.coverage??0)-(b.coverage??0)||a.name.localeCompare(b.name,'zh-CN')||a.id.localeCompare(b.id);
  });
  const eventPages=new Map();
+ function seedEvents(events,service=''){
+  const ordered=(events||[]).filter(e=>!service||e.service===service)
+   .sort((a,b)=>a.time-b.time||a.id-b.id),previous={},relevant=[];
+  for(const event of ordered){
+   const prior=previous[event.service];
+   if(['down','degraded'].includes(event.state)||
+      (event.state==='up'&&['down','degraded'].includes(prior)))relevant.push(event);
+   if(['up','down','degraded'].includes(event.state))previous[event.service]=event.state;
+  }
+  return relevant.sort((a,b)=>b.time-a.time||b.id-a.id).slice(0,15);
+ }
  function eventPanel(service=''){
   const eventWindow=windowKey,key=eventWindow+'|'+service, state=eventPages.get(key)||{page:1,before:null};eventPages.set(key,state);
   if(state.wrap){if(!state.pending&&Date.now()-(state.loadedAt||0)>30000)state.show(state.page,true);return state.wrap;}
@@ -82,7 +117,7 @@
    finally{clearTimeout(timeout);if(request===state.request){state.pending=false;wrap.setAttribute('aria-busy','false');}}
   }
   state.show=show;
-  const start=data.window_start??0,seed=(data.events||[]).filter(e=>(!service||e.service===service)&&e.time>=start&&(['down','degraded'].includes(e.state)||(e.state==='up'&&['down','degraded'].includes(e.old)))).sort((a,b)=>b.time-a.time||b.id-a.id).slice(0,15);
+  const start=data.window_start??0,seed=seedEvents((data.events||[]).filter(e=>e.time>=start),service);
   if(seed.length)wrap.append(eventList(seed));
   else {const skeleton=el('div','ops-glass ops-events ops-event-skeleton');skeleton.setAttribute('aria-label','正在加载记录');for(let i=0;i<5;i++){const row=el('div','ops-event');row.setAttribute('aria-hidden','true');row.append(el('span','ops-skeleton ops-skeleton-title'));skeleton.append(row);}wrap.append(skeleton);}
   show(state.page);return wrap;
@@ -109,7 +144,7 @@
  function renderToolbar(){
   toolbar.replaceChildren();const nav=el('nav','ops-tabs');nav.setAttribute('aria-label','主页视图');const indicator=el('span','ops-tab-indicator');nav.append(indicator);
   const align=()=>{const selected=nav.querySelector('[aria-current=page]');if(selected){indicator.style.width=selected.offsetWidth+'px';indicator.style.transform='translateX('+selected.offsetLeft+'px)';}};
-  for(const [id,name] of [['services','服务入口'],['servers','服务器'],['alerts','告警']]){const b=button(name,()=>{tab=id;selectedHost='';filterHost='';listPage=1;selectedService='';only='all';for(const item of nav.querySelectorAll('button'))item.setAttribute('aria-current',item===b?'page':'false');align();renderBody();},'ops-tab');b.setAttribute('aria-current',tab===id?'page':'false');nav.append(b);}toolbar.append(nav);align();
+  for(const [id,name] of [['services','服务入口'],['servers','服务器'],['backups','备份'],['alerts','告警']]){const b=button(name,()=>{tab=id;selectedHost='';filterHost='';listPage=1;selectedService='';only='all';for(const item of nav.querySelectorAll('button'))item.setAttribute('aria-current',item===b?'page':'false');align();renderBody();},'ops-tab');b.setAttribute('aria-current',tab===id?'page':'false');nav.append(b);}toolbar.append(nav);align();
   const controls=el('div','ops-controls');controls.append(glassSelect('统计时间范围',[['24h','近24小时'],['7d','近7天'],['30d','近30天'],['all','累计']],windowKey,v=>{windowKey=v;load();}));
   const search=el('input','ops-search');search.type='search';search.placeholder='搜索服务或服务器';search.setAttribute('aria-label','搜索服务或服务器');search.value=query;search.oninput=()=>{query=search.value;listPage=1;renderBody();};controls.append(search);
   const refresh=button('刷新',()=>load());refresh.setAttribute('data-refresh','');refresh.disabled=busy;controls.append(refresh);toolbar.append(controls);
@@ -128,14 +163,15 @@
  function servicesView(){
   body.append(filters());const services=filtered(data.services).filter(s=>entry(s));
   if(!services.length){body.append(el('p','ops-empty','没有匹配的服务入口。可以在服务器页查看全部已登记服务。'));return;}
-  const category=s=>{const key=s.id.split(':')[1];if(['growth','talent'].includes(key))return '业务系统';if(['blog','miaomiao','website','images'].includes(key))return '网站与内容';if(['mcsm','skin','palworld'].includes(key))return '游戏相关';if(['ups','tos','ddns'].includes(key))return '家庭服务';return '开发与运维';};
-  for(const name of ['家庭服务','业务系统','网站与内容','游戏相关','开发与运维',...new Set(services.map(category))].filter((v,i,a)=>a.indexOf(v)===i)){
+  const categories=['家庭服务','业务系统','网站与内容','游戏相关','开发与运维','开发与测试','杂项'];
+  const category=s=>{if(categories.includes(s.category))return s.category;const key=s.id.split(':')[1];if(['growth','talent'].includes(key))return '业务系统';if(['blog','miaomiao','website','images'].includes(key))return '网站与内容';if(['mcsm','skin','palworld'].includes(key))return '游戏相关';if(['ups','tos','ddns'].includes(key))return '家庭服务';return '开发与运维';};
+  for(const name of [...categories,...new Set(services.map(category))].filter((v,i,a)=>a.indexOf(v)===i)){
    const items=services.filter(s=>category(s)===name);if(!items.length)continue;
    const section=el('section','ops-category');section.append(el('h2','',name));const grid=el('div','ops-entry-grid');
    for(const s of items){
     const card=el('article','ops-glass ops-entry');const link=entry(s);link.className='ops-entry-link';link.replaceChildren(serviceIcon(s));
     const copy=el('span','ops-entry-copy');copy.append(el('strong','',s.name),el('small','',descriptions[s.id.split(':')[1]]||s.category));link.append(copy);card.append(link);
-    const dot=mark(s.state);dot.classList.add('ops-entry-status');card.append(dot,button('查看状态',()=>goService(s.id),'ops-entry-detail'));
+    const dot=mark(s.state,s);dot.classList.add('ops-entry-status');card.append(dot,button('查看状态',()=>goService(s.id),'ops-entry-detail'));
     if(s.id==='home-compute-1:ups'){const u=data.household?.ups||{};const metrics=el('div','ops-home-metrics');const seconds=Number(u.battery_runtime);for(const [label,value] of [['供电状态',u.status==='ONLINE'?'市电供电':u.status==='ON_BATTERY'?'电池供电':'未知'],['电池电量',u.battery_charge||'—'],['估算续航',Number.isFinite(seconds)?Math.floor(seconds/60)+'分 '+Math.floor(seconds%60)+'秒':'—'],['当前负载',u.load_percent||'—']]){const item=el('div');item.append(el('small','',label),el('strong','',value));metrics.append(item);}card.append(metrics);}
     if(s.id==='home-compute-1:ddns'){const d=data.household?.ddns||{};const metrics=el('div','ops-home-metrics');const item=el('div');item.append(el('small','','家庭域名 · 公网 IPv4'),el('strong','',d.ipv4||'—'));metrics.append(item);card.append(metrics);}
     grid.append(card);
@@ -147,7 +183,7 @@
  }
  function serviceRows(services){
   const list=el('div','ops-glass ops-list');
-  for(const s of services){const row=el('article','ops-service-row');const identity=el('div','ops-identity');identity.append(button(s.name,()=>goService(s.id),'ops-name'),el('small','',s.app?'业务应用 · '+s.category:s.category));row.append(identity,mark(s.state),bars(s));
+   for(const s of services){const row=el('article','ops-service-row');const identity=el('div','ops-identity');identity.append(button(s.name,()=>goService(s.id),'ops-name'),el('small','',s.app?'业务应用 · '+s.category:s.category));row.append(identity,mark(s.is_backup?backupUi.effectiveState(s):s.state,s),bars(s));
    const stats=el('div','ops-row-stats');stats.append(el('span','',pct(s.availability)),el('small','',s.ms===null?'暂无响应时间':Math.round(s.ms)+' ms'));row.append(stats);
    const open=entry(s);if(open)row.append(open);else row.append(el('span','ops-no-entry','内部服务'));list.append(row);
   }return list;
@@ -170,19 +206,53 @@
    const items=filtered(data.services);body.append(pagedRows(items));return;
   }
   const grid=el('div','ops-server-grid');for(const h of data.servers.filter(h=>!query||(h.name+' '+h.address).toLowerCase().includes(query.toLowerCase()))){
-   const services=data.services.filter(s=>s.server===h.id);const abnormal=services.filter(s=>['down','degraded'].includes(s.state)).length;
+   const services=data.services.filter(s=>s.server===h.id);const abnormal=services.filter(s=>backupUi.isAbnormal(s)).length;
    const card=button('',()=>goHost(h.id),'ops-glass ops-server');const top=el('div','ops-row-head');top.append(el('span','ops-server-symbol',''),mark(h.state));card.append(top,el('h2','',h.name),el('p','ops-host-label',h.address));
    const counts=el('div','ops-server-counts');counts.append(el('strong','',services.length+' 个服务'),el('span',abnormal?'ops-alert-ink':'',abnormal+' 项异常'));card.append(counts,el('small','',services.filter(s=>s.state==='unknown').length+' 项未知 · 查看全部服务'));grid.append(card);
   }body.append(grid,el('h2','ops-section-title','全部已登记服务'),filters());const items=filtered(data.services);body.append(pagedRows(items));
  }
  function eventList(events){
-  const relevant=events.filter(e=>['down','degraded'].includes(e.state)||(e.state==='up'&&['down','degraded'].includes(e.old)));const list=el('div','ops-glass ops-events');if(!relevant.length){list.append(el('p','ops-empty','暂无故障与恢复记录。'));return list;}for(const e of relevant){const s=data.services.find(s=>s.id===e.service);const row=el('div','ops-event');row.append(el('time','',stamp(e.time)),button(s?.name||hostName(e.service),()=>s?goService(e.service):goHost(e.service),'ops-name'),mark(e.state),el('span','ops-event-detail',e.state==='up'?'已恢复正常':e.detail.includes('宿主只读采集')?'运行健康检查异常':e.detail));list.append(row);}return list;
+  const list=el('div','ops-glass ops-events');if(!events.length){list.append(el('p','ops-empty','暂无故障与恢复记录。'));return list;}for(const e of events){const s=data.services.find(s=>s.id===e.service);const row=el('div','ops-event');row.append(el('time','',stamp(e.time)),button(s?.name||hostName(e.service),()=>s?goService(e.service):goHost(e.service),'ops-name'),mark(e.state,s),el('span','ops-event-detail',e.state==='up'?'已恢复正常':e.detail.includes('宿主只读采集')?'运行健康检查异常':e.detail));list.append(row);}return list;
  }
  function alertsView(){
   const lost=data.servers.filter(h=>h.monitoring_issue);if(lost.length){body.append(el('h2','ops-section-title','服务器采集失联'));const list=el('div','ops-glass ops-list');for(const h of lost){const row=el('div','ops-server-metrics');row.append(button(h.name,()=>goHost(h.id),'ops-name'),el('span','','最后采集 '+stamp(h.last_seen)+'；需要核对连接，尚未确认整机停机'));list.append(row);}body.append(list);}
   body.append(el('h2','ops-section-title','当前异常'));const abnormal=data.services.filter(s=>['down','degraded'].includes(s.state));body.append(abnormal.length?serviceRows(abnormal):el('p','ops-empty','当前没有已确认的服务异常。'));
   const unknown=data.services.filter(s=>s.state==='unknown');if(unknown.length){const details=el('details','ops-unknown-details');details.open=unknownExpanded;details.ontoggle=()=>{unknownExpanded=details.open;};details.append(el('summary','',unknown.length+' 项状态未知 · 需要核对监测覆盖'),serviceRows(unknown));body.append(details);}
   body.append(el('h2','ops-section-title','故障与恢复记录'),pagedEvents());
+ }
+  function transportLabel(backup){
+   const transport=backup?.transport;
+   if(!transport)return backup?.transport_configured?'上传通路状态未知':'未配置上传通路探测器';
+   const label=({up:'上传通路通畅',down:'上传通路断开',unknown:'上传通路状态未知'})[transport.state]||'上传通路状态未知';
+   return backup.transport_stale?label+'（回执已过期）':label;
+ }
+  function metadataLabel(backup){
+    return backupUi.metadataNotice(backup);
+  }
+ function shortSnapshot(value){return value&&value.length>18?value.slice(0,10)+'…'+value.slice(-6):(value||'尚无有效快照');}
+ function backupCard(s){
+   const b=s.backup||{};
+  const card=el('article','ops-glass ops-backup-card'),head=el('div','ops-backup-head');
+   const identity=el('div','ops-backup-identity');identity.append(button(s.name,()=>goService(s.id),'ops-name'),el('small','',hostName(s.server)+' · '+(b.scheduler||'状态未知')));head.append(identity,mark(backupUi.effectiveState(s),s));card.append(head,el('p','ops-backup-detail',s.detail));
+   const snapshot=el('div','ops-backup-snapshot'),code=el('code','',shortSnapshot(b.snapshot_id));snapshot.append(el('span','',backupUi.snapshotHeading(s)),code);if(b.snapshot_id)code.title=b.snapshot_id;card.append(snapshot);
+  const facts=el('dl','ops-backup-facts');
+   for(const [label,value] of [['最近有效成功',b.checked_at?stamp(b.checked_at):'尚无'],['检查方式',b.check_mode||'尚无'],['元数据',metadataLabel(b)],['上传通路',transportLabel(b)],['采集时间',b.observed_at?stamp(b.observed_at):'尚未采集']])facts.append(el('dt','',label),el('dd','',value));
+   card.append(facts,el('p','ops-host-label',backupUi.metadataNotice(b)),button('查看备份详情',()=>goService(s.id),'ops-text-button'));return card;
+ }
+ function backupView(){
+  const jobs=filtered(data.services).filter(s=>s.is_backup),all=data.services.filter(s=>s.is_backup),summary=data.backup_summary||{};
+  const overview=el('section','ops-backup-overview');
+  for(const [label,value,hint] of [['已登记备份',summary.registered??all.length,'独立来源'],
+    ['正常',summary.up??0,'最近成功且检查有效'],['运行中',summary.running??0,'不计故障'],
+    ['需处理',summary.abnormal??0,'备份或上传通路异常'],['最新成功',summary.latest_success_at?stamp(summary.latest_success_at):'尚无','全部来源']]){
+   const item=el('div','ops-glass ops-backup-stat');item.append(el('span','',label),el('strong','',String(value)),el('small','',hint));overview.append(item);
+  }
+   body.append(overview,el('p','ops-backup-note','“正常”要求计划、真实退出状态、当前安全快照和全仓读检同时有效；备份运行中计入监测覆盖，不拉低可用率。上传通路断开或回执超过15分钟会把来源列入“需处理”。'),filters());
+   const noMetadata=jobs.every(s=>!s.backup?.snapshot_id&&!s.backup?.last_valid_at);
+   const empty=backupUi.emptyMessage(all.length,jobs.length,noMetadata);
+   if(empty)body.append(el('p','ops-empty',empty));
+   if(!jobs.length)return;
+  const grid=el('div','ops-backup-grid');for(const s of jobs)grid.append(backupCard(s));body.append(grid);
  }
  function latencyChart(s,latency){
   const chart=el('section','ops-glass ops-detail');chart.append(el('h3','','响应时间 · 近24小时'));if(!latency?.length){chart.append(el('p','ops-empty','暂无响应时间数据。'));return chart;}
@@ -199,11 +269,14 @@
  }
  function detailView(){
   const s=data.services.find(s=>s.id===selectedService);if(!s){selectedService='';return renderBody();}
-  body.append(button('返回列表',()=>{selectedService='';render();},'ops-text-button'));const head=el('div','ops-detail-heading');head.append(el('h2','',s.name),mark(s.state));body.append(head,button(hostName(s.server),()=>goHost(s.server),'ops-text-button'));
-  const panel=el('section','ops-glass ops-detail');panel.append(el('p','',s.detail),bars(s),footerStats(s));const legends=el('div','ops-legend');for(const state of Object.keys(labels))legends.append(mark(state));panel.append(legends,el('p','ops-host-label','最后检查 '+stamp(s.checked_at)+' · 当前响应 '+(s.ms===null?'—':Math.round(s.ms)+' ms')));
+   body.append(button('返回列表',()=>{selectedService='';render();},'ops-text-button'));const head=el('div','ops-detail-heading');head.append(el('h2','',s.name),mark(s.is_backup?backupUi.effectiveState(s):s.state,s));body.append(head,button(hostName(s.server),()=>goHost(s.server),'ops-text-button'));
+  const panel=el('section','ops-glass ops-detail');panel.append(el('p','',s.detail),bars(s),footerStats(s));const legends=el('div','ops-legend');for(const state of Object.keys(labels))legends.append(mark(state,s));panel.append(legends,el('p','ops-host-label','最后检查 '+stamp(s.checked_at)+' · 当前响应 '+(s.ms===null?'—':Math.round(s.ms)+' ms')));
   const open=entry(s);if(open)panel.append(open);body.append(panel);
-  const latencyHolder=el('section','ops-glass ops-detail');latencyHolder.setAttribute('data-latency',s.id);latencyHolder.style.minHeight='210px';latencyHolder.append(el('h3','','响应时间 · 近24小时'),el('p','ops-empty','正在加载响应曲线…'));body.append(latencyHolder);if(!staging)loadLatency(s,latencyHolder);
-  const technical=el('dl','ops-glass ops-technical');for(const [label,value] of [['类别',s.app?'业务应用（计入服务总数）':s.category],['运行组件',(s.containers||[]).join('、')||(s.units||[]).join('、')||s.process||'按任务专用检查'],['开始监测',stamp(s.monitoring_since)],['统计中的异常时长',duration(s.down_seconds)],['监测口径',s.probe?'HTTP/TLS 入口检查；不代表登录后业务全链可用':'宿主运行状态；不代表业务操作已验收']]){technical.append(el('dt','',label),el('dd','',value));}body.append(technical,el('h2','ops-section-title','相关事件'),pagedEvents(s.id));
+  if(!s.is_backup){const latencyHolder=el('section','ops-glass ops-detail');latencyHolder.setAttribute('data-latency',s.id);latencyHolder.style.minHeight='210px';latencyHolder.append(el('h3','','响应时间 · 近24小时'),el('p','ops-empty','正在加载响应曲线…'));body.append(latencyHolder);if(!staging)loadLatency(s,latencyHolder);}
+  const technical=el('dl','ops-glass ops-technical'),backup=s.backup||{};
+  const details=[['类别',s.app?'业务应用（计入服务总数）':s.category],['运行组件',(s.containers||[]).join('、')||(s.units||[]).join('、')||s.process||'按任务专用检查'],['开始监测',stamp(s.monitoring_since)],['统计中的异常时长',duration(s.down_seconds)],['监测口径',s.is_backup?'定时计划、真实快照、全仓读检与26小时时效；备份运行中不计异常':s.is_probe?'HTTP/TLS 入口检查；不代表登录后业务全链可用':'宿主运行状态；不代表业务操作已验收']];
+   if(s.is_backup)details.splice(2,0,['调度方式',backup.scheduler||'未知'],['快照来源',backupUi.snapshotHeading(s)],['快照 ID',backup.snapshot_id||'尚无有效快照'],['检查方式',backup.check_mode||'尚无'],['元数据',metadataLabel(backup)],['最近有效成功',backup.checked_at?stamp(backup.checked_at):'尚无'],['上传通路',transportLabel(backup)]);
+  for(const [label,value] of details)technical.append(el('dt','',label),el('dd','',value));body.append(technical,el('h2','ops-section-title','相关事件'),pagedEvents(s.id));
  }
  function reconcile(parent,fresh){
   // Keep unchanged subtrees and controls; replace closure-bound interactive regions as a unit.
@@ -228,7 +301,7 @@
  }
  function renderBody(incremental=false){
   if(!data)return;const live=body;if(incremental){body=el('div');staging=true;}else body.replaceChildren();
-  try{if(selectedService)detailView();else if(tab==='servers')serversView();else if(tab==='alerts')alertsView();else servicesView();}
+  try{if(selectedService)detailView();else if(tab==='servers')serversView();else if(tab==='backups')backupView();else if(tab==='alerts')alertsView();else servicesView();}
   finally{if(incremental){const fresh=body;body=live;staging=false;reconcile(body,fresh);}}
   if(selectedService){const holder=body.querySelector('[data-latency]'),s=data.services.find(s=>s.id===selectedService);if(holder&&s)loadLatency(s,holder);}
  }
@@ -272,8 +345,8 @@
  function renderSkeleton(){
   root.setAttribute('aria-busy','true');summary.replaceChildren();toolbar.replaceChildren();body.replaceChildren();notice.textContent='正在加载服务目录…';
   for(const name of ['服务器','全部服务','当前异常','平均可用率','监测覆盖']){const stat=el('div','ops-stat');stat.append(el('span','ops-stat-label',name),el('span','ops-skeleton ops-skeleton-value'));summary.append(stat);}
-  const nav=el('div','ops-tabs');for(const name of ['服务入口','服务器','告警']){const b=button(name,()=>{},'ops-tab');b.disabled=true;nav.append(b);}toolbar.append(nav,el('span','ops-skeleton ops-skeleton-control'));
-  for(const [name,count] of [['家庭服务',3],['业务系统',2],['网站与内容',5],['游戏相关',2],['开发与运维',6]]){const section=el('section','ops-category');section.append(el('h2','',name));const grid=el('div','ops-entry-grid');for(let i=0;i<count;i++){const card=el('div','ops-glass ops-entry ops-skeleton-card');card.setAttribute('aria-hidden','true');card.append(el('span','ops-skeleton ops-skeleton-title'),el('span','ops-skeleton ops-skeleton-description'));grid.append(card);}section.append(grid);body.append(section);}
+  const nav=el('div','ops-tabs');for(const name of ['服务入口','服务器','备份','告警']){const b=button(name,()=>{},'ops-tab');b.disabled=true;nav.append(b);}toolbar.append(nav,el('span','ops-skeleton ops-skeleton-control'));
+  for(const [name,count] of [['家庭服务',3],['业务系统',2],['网站与内容',5],['游戏相关',2],['开发与运维',6],['开发与测试',1],['杂项',1]]){const section=el('section','ops-category');section.append(el('h2','',name));const grid=el('div','ops-entry-grid');for(let i=0;i<count;i++){const card=el('div','ops-glass ops-entry ops-skeleton-card');card.setAttribute('aria-hidden','true');card.append(el('span','ops-skeleton ops-skeleton-title'),el('span','ops-skeleton ops-skeleton-description'));grid.append(card);}section.append(grid);body.append(section);}
  }
  function start(){
   if(ready)return true;const footer=document.querySelector('#footer');if(!footer)return false;ready=true;
