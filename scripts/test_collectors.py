@@ -642,8 +642,7 @@ class ServiceSchemaTests(unittest.TestCase):
         launchd={'scheduler':'launchd','label':'com.example.backup',
                  'plist':'/Library/LaunchDaemons/com.example.backup.plist',
                  'receipt':'/Library/Application Support/Example/health.json'}
-        with self.assertRaises(ValueError):
-            schema.safe_backup_job(launchd)
+        self.assertNotIn('plist_sha256', schema.safe_backup_job(launchd))
         self.assertEqual(schema.safe_backup_job(
             {**launchd,'plist_sha256':'a'*64})['plist_sha256'],'a'*64)
         with self.assertRaises(ValueError):

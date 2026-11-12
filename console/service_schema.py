@@ -37,7 +37,7 @@ def safe_backup_job(value):
     required = {
         'systemd': ('timer', 'service', 'receipt'),
         'backrest': ('service', 'config', 'oplog', 'plan', 'receipt'),
-    'launchd': ('label', 'plist', 'plist_sha256', 'receipt'),
+    'launchd': ('label', 'plist', 'receipt'),
     }[scheduler]
     if any(not isinstance(value.get(key), str) or not value[key].strip() for key in required):
         raise ValueError('missing backup_job fields')
