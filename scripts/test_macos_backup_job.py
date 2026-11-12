@@ -30,7 +30,11 @@ class MacOSBackupJobContractTests(unittest.TestCase):
             "working_directory == '/Library/Restic'",
             "max_age >= 60 && max_age <= 604_800",
             "receipt['status'] == 'running' ? 'maintenance' : 'up'",
+            "invalid = {'checked_at' => now.to_f, 'state' => 'unknown'",
+            "return invalid unless",
+            "transport = transport_metadata(service['backup_job']['transport_receipt'],",
             "item['backup'] = metadata if metadata",
+            "item['transport'] = transport if transport",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, source)

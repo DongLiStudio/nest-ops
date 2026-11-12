@@ -165,17 +165,21 @@ end
 
 def transport_metadata(path, server, now)
   return nil unless path.is_a?(String) && !path.empty?
+  invalid = {'checked_at' => now.to_f, 'state' => 'unknown',
+             'unauthenticated_status' => nil, 'config_status' => nil,
+             'error_code' => 'receipt_invalid'}
   receipt = JSON.parse(controlled_public_file(path))
-  return nil unless receipt.is_a?(Hash) && receipt['schema'] == 1 &&
+  return invalid unless receipt.is_a?(Hash) && receipt['schema'] == 1 &&
     receipt['profile'] == server && %w[up down unknown].include?(receipt['status'])
   checked = utc_stamp(receipt['checked_utc'])
-  return nil unless checked && checked <= now + 300
+  return invalid unless checked && checked <= now + 300
   unauth = receipt['unauthenticated_status']
   config = receipt['authenticated_config_status']
   error = receipt['error_code']
-  return nil unless [nil, 401].include?(unauth) && [nil, 'pinned'].include?(config)
-  return nil if !error.nil? && (!error.is_a?(String) || !error.match?(TRANSPORT_ERROR))
-  return nil if receipt['status'] == 'up' && (unauth != 401 || config != 'pinned' || !error.nil?)
+  return invalid unless [nil, 401].include?(unauth) && [nil, 'pinned'].include?(config)
+  return invalid if !error.nil? && (!error.is_a?(String) || !error.match?(TRANSPORT_ERROR))
+  return invalid if receipt['status'] == 'up' &&
+    (unauth != 401 || config != 'pinned' || !error.nil?)
   state = receipt['status']
   if now - checked > TRANSPORT_MAX_AGE
     state = 'down'
@@ -184,9 +188,7 @@ def transport_metadata(path, server, now)
   {'checked_at' => checked.to_f, 'state' => state,
    'unauthenticated_status' => unauth, 'config_status' => config, 'error_code' => error}
 rescue StandardError
-  {'checked_at' => now.to_f, 'state' => 'unknown',
-   'unauthenticated_status' => nil, 'config_status' => nil,
-   'error_code' => 'receipt_invalid'}
+  invalid
 end
 
 def backup_metadata(job, server, now)
@@ -213,8 +215,6 @@ def backup_metadata(job, server, now)
   result = {'schema_version' => 1, 'checked_at' => checked.to_f,
             'snapshot_id' => receipt['snapshot_id'],
             'check_mode' => receipt['check_mode']}
-  transport = transport_metadata(job['transport_receipt'], server, now)
-  result['transport'] = transport if transport
   result
 rescue StandardError
   nil
@@ -239,6 +239,8 @@ def collect(config)
     elsif service.key?('backup_job')
       state = backup_state(service['backup_job'], config['server'], Time.now)
       metadata = backup_metadata(service['backup_job'], config['server'], Time.now)
+      transport = transport_metadata(service['backup_job']['transport_receipt'],
+                                     config['server'], Time.now)
     elsif service['containers'] && !service['containers'].empty?
       values = service['containers'].map do |name|
         states.fetch(name, exit_status&.success? ? 'down' : 'unknown')
@@ -252,6 +254,7 @@ def collect(config)
       service.key?('backup_job')
     item = {'state' => state}
     item['backup'] = metadata if metadata
+    item['transport'] = transport if transport
     services[service.fetch('id')] = item
   end
   metrics = {}

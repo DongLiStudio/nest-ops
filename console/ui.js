@@ -24,21 +24,25 @@
  const duration=s=>s>=3600?(s/3600).toFixed(1)+' 小时':Math.round(s/60)+' 分钟';
  const mark=(state,service)=>{const n=el('span','ops-state ops-'+state,stateLabel(state,service));return n;};
   const backupUi={
-   effectiveState(service){return service?.backup?.transport?.state==='down'?'down':(service?.state||'unknown');},
-   isAbnormal(service){const state=service?.backup?.transport?.state==='down'?'down':(service?.state||'unknown');return ['down','degraded'].includes(state);},
+   effectiveState(service){return service?.effective_state||(service?.backup?.transport?.state==='down'?'down':service?.state||'unknown');},
+   isAbnormal(service){const state=service?.effective_state||(service?.backup?.transport?.state==='down'?'down':service?.state||'unknown');return ['down','degraded'].includes(state);},
    snapshotHeading(service){
     const backup=service?.backup||{};
-    if(backup.snapshot_id&&['up','maintenance'].includes(service?.state)&&backup.metadata_state==='valid')return '当前已检查快照';
+    const state=service?.effective_state||(backup.transport?.state==='down'?'down':service?.state||'unknown');
+    if(backup.snapshot_id&&['up','maintenance'].includes(state)&&backup.metadata_state==='valid'&&backup.fresh===true)return '当前已检查快照';
     if(backup.snapshot_id)return '上次有效快照';
     return '尚无有效快照';
    },
    metadataNotice(backup){
     const state=backup?.metadata_state,fallback=backup?.last_valid_at?'当前展示上次有效快照。':'当前没有可展示的有效快照。';
+    if(state==='valid'&&backup?.fresh===false)return '本次安全元数据结构有效，但已超过有效时限。'+fallback;
     if(state==='valid')return '本次安全元数据有效。';
     if(state==='missing')return '本次未收到安全元数据。'+fallback;
     if(state==='invalid')return '本次安全元数据无效，已予拒绝。'+fallback;
     return '安全元数据状态未知。'+fallback;
    },
+   snapshotCount(backup){return Array.isArray(backup?.snapshot_history)?backup.snapshot_history.length:backup?.snapshot_id?1:0;},
+   transportCount(backup){return Array.isArray(backup?.transport_history)?backup.transport_history.length:0;},
    emptyMessage(allCount,jobCount,noMetadata){
     if(allCount===0)return '尚未登记任何备份来源。';
     if(jobCount===0)return '没有符合当前筛选条件的备份来源。';
@@ -73,7 +77,7 @@
   const href=safeHref(s.href);if(!href)return null;
   const a=el('a','ops-open','打开');a.href=href;a.target=href.startsWith('hometunnel:')?'_self':'_blank';a.rel='noopener noreferrer';a.setAttribute('aria-label','打开 '+s.name);return a;
  };
-  const filtered=services=>services.filter(s=>(!(selectedHost||filterHost)||s.server===(selectedHost||filterHost))&&(!query||(s.name+' '+hostName(s.server)).toLowerCase().includes(query.toLowerCase()))&&(only==='all'||only==='abnormal'&&backupUi.isAbnormal(s)||only==='unknown'&&s.state==='unknown'));
+  const filtered=services=>services.filter(s=>(!(selectedHost||filterHost)||s.server===(selectedHost||filterHost))&&(!query||(s.name+' '+hostName(s.server)).toLowerCase().includes(query.toLowerCase()))&&(only==='all'||only==='abnormal'&&backupUi.isAbnormal(s)||only==='unknown'&&backupUi.effectiveState(s)==='unknown'));
  const sortedServices=items=>[...items].sort((a,b)=>{
   const av=Number.isFinite(a.availability)?a.availability:Infinity,bv=Number.isFinite(b.availability)?b.availability:Infinity;
   return (av===bv?0:av-bv)||(a.coverage??0)-(b.coverage??0)||a.name.localeCompare(b.name,'zh-CN')||a.id.localeCompare(b.id);
@@ -138,7 +142,7 @@
    ['当前异常',s.abnormal,s.unknown+' 项未知 · '+s.abnormal_servers+' 台采集失联',()=>{tab='alerts';selectedService='';render();}],
    ['平均可用率',pct(s.availability),s.availability_services+' 项有数据 · 等权平均',null],
    ['监测覆盖',pct(s.coverage),'所选时间范围内的覆盖',null]]){
-   const n=action?button('',action,'ops-stat'):el('div','ops-stat');if(name==='当前异常'&&s.abnormal>0)n.classList.add(data.services.some(item=>item.state==='down')?'ops-stat-critical':'ops-stat-warning');n.append(el('span','ops-stat-label',name),el('strong','',String(value)),el('small','',hint));summary.append(n);
+    const n=action?button('',action,'ops-stat'):el('div','ops-stat');if(name==='当前异常'&&s.abnormal>0)n.classList.add(data.services.some(item=>backupUi.effectiveState(item)==='down')?'ops-stat-critical':'ops-stat-warning');n.append(el('span','ops-stat-label',name),el('strong','',String(value)),el('small','',hint));summary.append(n);
   }
  }
  function renderToolbar(){
@@ -171,7 +175,7 @@
    for(const s of items){
     const card=el('article','ops-glass ops-entry');const link=entry(s);link.className='ops-entry-link';link.replaceChildren(serviceIcon(s));
     const copy=el('span','ops-entry-copy');copy.append(el('strong','',s.name),el('small','',descriptions[s.id.split(':')[1]]||s.category));link.append(copy);card.append(link);
-    const dot=mark(s.state,s);dot.classList.add('ops-entry-status');card.append(dot,button('查看状态',()=>goService(s.id),'ops-entry-detail'));
+    const dot=mark(backupUi.effectiveState(s),s);dot.classList.add('ops-entry-status');card.append(dot,button('查看状态',()=>goService(s.id),'ops-entry-detail'));
     if(s.id==='home-compute-1:ups'){const u=data.household?.ups||{};const metrics=el('div','ops-home-metrics');const seconds=Number(u.battery_runtime);for(const [label,value] of [['供电状态',u.status==='ONLINE'?'市电供电':u.status==='ON_BATTERY'?'电池供电':'未知'],['电池电量',u.battery_charge||'—'],['估算续航',Number.isFinite(seconds)?Math.floor(seconds/60)+'分 '+Math.floor(seconds%60)+'秒':'—'],['当前负载',u.load_percent||'—']]){const item=el('div');item.append(el('small','',label),el('strong','',value));metrics.append(item);}card.append(metrics);}
     if(s.id==='home-compute-1:ddns'){const d=data.household?.ddns||{};const metrics=el('div','ops-home-metrics');const item=el('div');item.append(el('small','','家庭域名 · 公网 IPv4'),el('strong','',d.ipv4||'—'));metrics.append(item);card.append(metrics);}
     grid.append(card);
@@ -183,7 +187,7 @@
  }
  function serviceRows(services){
   const list=el('div','ops-glass ops-list');
-   for(const s of services){const row=el('article','ops-service-row');const identity=el('div','ops-identity');identity.append(button(s.name,()=>goService(s.id),'ops-name'),el('small','',s.app?'业务应用 · '+s.category:s.category));row.append(identity,mark(s.is_backup?backupUi.effectiveState(s):s.state,s),bars(s));
+    for(const s of services){const row=el('article','ops-service-row');const identity=el('div','ops-identity');identity.append(button(s.name,()=>goService(s.id),'ops-name'),el('small','',s.app?'业务应用 · '+s.category:s.category));row.append(identity,mark(backupUi.effectiveState(s),s),bars(s));
    const stats=el('div','ops-row-stats');stats.append(el('span','',pct(s.availability)),el('small','',s.ms===null?'暂无响应时间':Math.round(s.ms)+' ms'));row.append(stats);
    const open=entry(s);if(open)row.append(open);else row.append(el('span','ops-no-entry','内部服务'));list.append(row);
   }return list;
@@ -208,7 +212,7 @@
   const grid=el('div','ops-server-grid');for(const h of data.servers.filter(h=>!query||(h.name+' '+h.address).toLowerCase().includes(query.toLowerCase()))){
    const services=data.services.filter(s=>s.server===h.id);const abnormal=services.filter(s=>backupUi.isAbnormal(s)).length;
    const card=button('',()=>goHost(h.id),'ops-glass ops-server');const top=el('div','ops-row-head');top.append(el('span','ops-server-symbol',''),mark(h.state));card.append(top,el('h2','',h.name),el('p','ops-host-label',h.address));
-   const counts=el('div','ops-server-counts');counts.append(el('strong','',services.length+' 个服务'),el('span',abnormal?'ops-alert-ink':'',abnormal+' 项异常'));card.append(counts,el('small','',services.filter(s=>s.state==='unknown').length+' 项未知 · 查看全部服务'));grid.append(card);
+    const counts=el('div','ops-server-counts');counts.append(el('strong','',services.length+' 个服务'),el('span',abnormal?'ops-alert-ink':'',abnormal+' 项异常'));card.append(counts,el('small','',services.filter(s=>backupUi.effectiveState(s)==='unknown').length+' 项未知 · 查看全部服务'));grid.append(card);
   }body.append(grid,el('h2','ops-section-title','全部已登记服务'),filters());const items=filtered(data.services);body.append(pagedRows(items));
  }
  function eventList(events){
@@ -216,8 +220,8 @@
  }
  function alertsView(){
   const lost=data.servers.filter(h=>h.monitoring_issue);if(lost.length){body.append(el('h2','ops-section-title','服务器采集失联'));const list=el('div','ops-glass ops-list');for(const h of lost){const row=el('div','ops-server-metrics');row.append(button(h.name,()=>goHost(h.id),'ops-name'),el('span','','最后采集 '+stamp(h.last_seen)+'；需要核对连接，尚未确认整机停机'));list.append(row);}body.append(list);}
-  body.append(el('h2','ops-section-title','当前异常'));const abnormal=data.services.filter(s=>['down','degraded'].includes(s.state));body.append(abnormal.length?serviceRows(abnormal):el('p','ops-empty','当前没有已确认的服务异常。'));
-  const unknown=data.services.filter(s=>s.state==='unknown');if(unknown.length){const details=el('details','ops-unknown-details');details.open=unknownExpanded;details.ontoggle=()=>{unknownExpanded=details.open;};details.append(el('summary','',unknown.length+' 项状态未知 · 需要核对监测覆盖'),serviceRows(unknown));body.append(details);}
+   body.append(el('h2','ops-section-title','当前异常'));const abnormal=data.services.filter(s=>['down','degraded'].includes(backupUi.effectiveState(s)));body.append(abnormal.length?serviceRows(abnormal):el('p','ops-empty','当前没有已确认的服务异常。'));
+   const unknown=data.services.filter(s=>backupUi.effectiveState(s)==='unknown');if(unknown.length){const details=el('details','ops-unknown-details');details.open=unknownExpanded;details.ontoggle=()=>{unknownExpanded=details.open;};details.append(el('summary','',unknown.length+' 项状态未知 · 需要核对监测覆盖'),serviceRows(unknown));body.append(details);}
   body.append(el('h2','ops-section-title','故障与恢复记录'),pagedEvents());
  }
   function transportLabel(backup){
@@ -230,14 +234,24 @@
     return backupUi.metadataNotice(backup);
   }
  function shortSnapshot(value){return value&&value.length>18?value.slice(0,10)+'…'+value.slice(-6):(value||'尚无有效快照');}
+  function backupHistory(backup){
+   const snapshots=Array.isArray(backup?.snapshot_history)?backup.snapshot_history:[];
+   const transports=Array.isArray(backup?.transport_history)?backup.transport_history:[];
+   const details=el('details','ops-backup-history'),summary=el('summary','','快照与通路历史');
+   summary.append(el('span','',backupUi.snapshotCount(backup)+' 个快照 · '+backupUi.transportCount(backup)+' 条通路证据'));details.append(summary);
+   if(!snapshots.length&&!transports.length){details.append(el('p','ops-empty','尚无历史记录。'));return details;}
+   if(snapshots.length){details.append(el('h4','','快照历史'));const list=el('ol','ops-history-list');for(const item of snapshots){const row=el('li');row.append(el('code','',shortSnapshot(item.snapshot_id)),el('time','',stamp(item.checked_at)),el('small','',item.check_mode||'检查方式未知'));list.append(row);}details.append(list);}
+   if(transports.length){details.append(el('h4','','上传通路历史'));const list=el('ol','ops-history-list');for(const item of transports){const row=el('li');row.append(mark(item.state||'unknown'),el('time','',stamp(item.checked_at||item.observed_at)),el('small','',item.error_code||item.evidence_state||''));list.append(row);}details.append(list);}
+   return details;
+  }
  function backupCard(s){
    const b=s.backup||{};
   const card=el('article','ops-glass ops-backup-card'),head=el('div','ops-backup-head');
    const identity=el('div','ops-backup-identity');identity.append(button(s.name,()=>goService(s.id),'ops-name'),el('small','',hostName(s.server)+' · '+(b.scheduler||'状态未知')));head.append(identity,mark(backupUi.effectiveState(s),s));card.append(head,el('p','ops-backup-detail',s.detail));
    const snapshot=el('div','ops-backup-snapshot'),code=el('code','',shortSnapshot(b.snapshot_id));snapshot.append(el('span','',backupUi.snapshotHeading(s)),code);if(b.snapshot_id)code.title=b.snapshot_id;card.append(snapshot);
   const facts=el('dl','ops-backup-facts');
-   for(const [label,value] of [['最近有效成功',b.checked_at?stamp(b.checked_at):'尚无'],['检查方式',b.check_mode||'尚无'],['元数据',metadataLabel(b)],['上传通路',transportLabel(b)],['采集时间',b.observed_at?stamp(b.observed_at):'尚未采集']])facts.append(el('dt','',label),el('dd','',value));
-   card.append(facts,el('p','ops-host-label',backupUi.metadataNotice(b)),button('查看备份详情',()=>goService(s.id),'ops-text-button'));return card;
+   for(const [label,value] of [['最近有效成功',b.checked_at?stamp(b.checked_at):'尚无'],['检查方式',b.check_mode||'尚无'],['元数据',metadataLabel(b)],['快照历史',backupUi.snapshotCount(b)+' 条'],['上传通路',transportLabel(b)],['通路历史',backupUi.transportCount(b)+' 条'],['采集时间',b.observed_at?stamp(b.observed_at):'尚未采集']])facts.append(el('dt','',label),el('dd','',value));
+    card.append(facts,el('p','ops-host-label',backupUi.metadataNotice(b)),backupHistory(b),button('查看备份详情',()=>goService(s.id),'ops-text-button'));return card;
  }
  function backupView(){
   const jobs=filtered(data.services).filter(s=>s.is_backup),all=data.services.filter(s=>s.is_backup),summary=data.backup_summary||{};
@@ -269,14 +283,14 @@
  }
  function detailView(){
   const s=data.services.find(s=>s.id===selectedService);if(!s){selectedService='';return renderBody();}
-   body.append(button('返回列表',()=>{selectedService='';render();},'ops-text-button'));const head=el('div','ops-detail-heading');head.append(el('h2','',s.name),mark(s.is_backup?backupUi.effectiveState(s):s.state,s));body.append(head,button(hostName(s.server),()=>goHost(s.server),'ops-text-button'));
+   body.append(button('返回列表',()=>{selectedService='';render();},'ops-text-button'));const head=el('div','ops-detail-heading');head.append(el('h2','',s.name),mark(backupUi.effectiveState(s),s));body.append(head,button(hostName(s.server),()=>goHost(s.server),'ops-text-button'));
   const panel=el('section','ops-glass ops-detail');panel.append(el('p','',s.detail),bars(s),footerStats(s));const legends=el('div','ops-legend');for(const state of Object.keys(labels))legends.append(mark(state,s));panel.append(legends,el('p','ops-host-label','最后检查 '+stamp(s.checked_at)+' · 当前响应 '+(s.ms===null?'—':Math.round(s.ms)+' ms')));
   const open=entry(s);if(open)panel.append(open);body.append(panel);
   if(!s.is_backup){const latencyHolder=el('section','ops-glass ops-detail');latencyHolder.setAttribute('data-latency',s.id);latencyHolder.style.minHeight='210px';latencyHolder.append(el('h3','','响应时间 · 近24小时'),el('p','ops-empty','正在加载响应曲线…'));body.append(latencyHolder);if(!staging)loadLatency(s,latencyHolder);}
   const technical=el('dl','ops-glass ops-technical'),backup=s.backup||{};
   const details=[['类别',s.app?'业务应用（计入服务总数）':s.category],['运行组件',(s.containers||[]).join('、')||(s.units||[]).join('、')||s.process||'按任务专用检查'],['开始监测',stamp(s.monitoring_since)],['统计中的异常时长',duration(s.down_seconds)],['监测口径',s.is_backup?'定时计划、真实快照、全仓读检与26小时时效；备份运行中不计异常':s.is_probe?'HTTP/TLS 入口检查；不代表登录后业务全链可用':'宿主运行状态；不代表业务操作已验收']];
-   if(s.is_backup)details.splice(2,0,['调度方式',backup.scheduler||'未知'],['快照来源',backupUi.snapshotHeading(s)],['快照 ID',backup.snapshot_id||'尚无有效快照'],['检查方式',backup.check_mode||'尚无'],['元数据',metadataLabel(backup)],['最近有效成功',backup.checked_at?stamp(backup.checked_at):'尚无'],['上传通路',transportLabel(backup)]);
-  for(const [label,value] of details)technical.append(el('dt','',label),el('dd','',value));body.append(technical,el('h2','ops-section-title','相关事件'),pagedEvents(s.id));
+    if(s.is_backup)details.splice(2,0,['调度方式',backup.scheduler||'未知'],['快照来源',backupUi.snapshotHeading(s)],['快照 ID',backup.snapshot_id||'尚无有效快照'],['检查方式',backup.check_mode||'尚无'],['元数据',metadataLabel(backup)],['快照历史',backupUi.snapshotCount(backup)+' 条（最多保留20条）'],['最近有效成功',backup.checked_at?stamp(backup.checked_at):'尚无'],['上传通路',transportLabel(backup)],['通路历史',backupUi.transportCount(backup)+' 条（最多保留20条）']);
+   for(const [label,value] of details)technical.append(el('dt','',label),el('dd','',value));body.append(technical);if(s.is_backup)body.append(backupHistory(backup));body.append(el('h2','ops-section-title','相关事件'),pagedEvents(s.id));
  }
  function reconcile(parent,fresh){
   // Keep unchanged subtrees and controls; replace closure-bound interactive regions as a unit.
@@ -339,7 +353,7 @@
    if(generation!==loadGeneration)return;
    root.setAttribute('aria-busy','false');notice.textContent='监测数据暂时无法加载，请稍后刷新。已有记录不代表当前状态。';
    if(!data){summary.replaceChildren();toolbar.replaceChildren();body.replaceChildren();body.append(el('h2','ops-section-title','暂时无法加载服务目录'),el('p','ops-empty','请检查连接后重试。'),button('重新加载',()=>{renderSkeleton();load();}));}
-   else{householdData={};data.household={};data.services.forEach(s=>{s.state='unknown';s.detail='无法取得最新数据';});data.servers.forEach(s=>{s.state='unknown';s.metrics={};});data.summary.abnormal=0;data.summary.unknown=data.services.length;data.summary.availability=null;renderSummary();renderBody(true);}
+    else{householdData={};data.household={};data.services.forEach(s=>{s.state='unknown';s.effective_state='unknown';s.detail='无法取得最新数据';});data.servers.forEach(s=>{s.state='unknown';s.metrics={};});data.summary.abnormal=0;data.summary.unknown=data.services.length;data.summary.availability=null;renderSummary();renderBody(true);}
   }finally{clearTimeout(timeout);if(generation===loadGeneration){busy=false;const refresh=toolbar.querySelector('[data-refresh]');if(refresh)refresh.disabled=false;}}
  }
  function renderSkeleton(){

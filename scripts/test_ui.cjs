@@ -23,16 +23,18 @@ assert.deepEqual(sort(rows).map(x=>x.id),['low','a','b','covered','up','none']);
 assert.equal(rows[0].id,'none');
 assert(source.indexOf('items=sortedServices(items)')<source.indexOf('items.slice((listPage-1)*size'));
 
-assert.equal(backupUi.isAbnormal({state:'up',backup:{transport:{state:'down'}}}),true);
+assert.equal(backupUi.isAbnormal({state:'down',effective_state:'down',backup:{transport:{state:'up'}}}),true);
+assert.equal(backupUi.effectiveState({state:'down',effective_state:'down',backup:{transport:{state:'up'}}}),'down');
+assert.equal(backupUi.effectiveState({state:'up',effective_state:'up',backup:{transport:{state:'down'}}}),'up');
 assert.equal(backupUi.effectiveState({state:'up',backup:{transport:{state:'down'}}}),'down');
 assert.equal(backupUi.isAbnormal({state:'up',backup:{transport:{state:'up'}}}),false);
 assert.equal(backupUi.isAbnormal({state:'maintenance',backup:{transport:{state:'down'}}}),true);
 assert.equal(backupUi.isAbnormal({state:'degraded'}),true);
 
 assert.equal(backupUi.snapshotHeading({
-  state:'up',backup:{snapshot_id:'current',metadata_state:'valid'}}),'当前已检查快照');
+  state:'up',backup:{snapshot_id:'current',metadata_state:'valid',fresh:true}}),'当前已检查快照');
 assert.equal(backupUi.snapshotHeading({
-  state:'down',backup:{snapshot_id:'last',metadata_state:'valid'}}),'上次有效快照');
+  state:'up',backup:{snapshot_id:'last',metadata_state:'valid',fresh:false}}),'上次有效快照');
 assert.equal(backupUi.snapshotHeading({
   state:'unknown',backup:{snapshot_id:'last',metadata_state:'missing'}}),'上次有效快照');
 assert.equal(backupUi.snapshotHeading({
@@ -42,6 +44,9 @@ assert.match(backupUi.metadataNotice({metadata_state:'valid'}),/有效/);
 assert.match(backupUi.metadataNotice({metadata_state:'missing',last_valid_at:1}),/上次有效快照/);
 assert.match(backupUi.metadataNotice({metadata_state:'invalid',last_valid_at:1}),/无效.*上次有效快照/);
 assert.match(backupUi.metadataNotice({metadata_state:'missing'}),/没有可展示的有效快照/);
+assert.match(backupUi.metadataNotice({metadata_state:'valid',fresh:false}),/超过有效时限/);
+assert.equal(backupUi.snapshotCount({snapshot_history:[{},{},{}]}),3);
+assert.equal(backupUi.transportCount({transport_history:[{},{}]}),2);
 
 const emptyMessages=[
   backupUi.emptyMessage(0,0,false),
@@ -52,6 +57,9 @@ assert.equal(new Set(emptyMessages).size,3);
 assert.match(emptyMessages[0],/尚未登记/);
 assert.match(emptyMessages[1],/筛选条件/);
 assert.match(emptyMessages[2],/尚未收到任何安全元数据/);
+assert.match(source,/data\.services\.some\(item=>backupUi\.effectiveState\(item\)==='down'\)/);
+assert.match(source,/services\.filter\(s=>backupUi\.effectiveState\(s\)==='unknown'\)/);
+assert.match(source,/data\.services\.filter\(s=>\['down','degraded'\]\.includes\(backupUi\.effectiveState\(s\)\)\)/);
 
 assert(source.includes("fetch('/_ops/events?'"));
 assert(source.includes("params.set('before',state.before)"));
@@ -64,6 +72,9 @@ assert(source.includes("上传通路断开"));
 assert(source.includes("回执已过期"));
 assert(source.includes("本次未收到安全元数据"));
 assert(source.includes("本次安全元数据无效"));
+assert(source.includes("backupHistory(b)"));
+assert(source.includes("快照与通路历史"));
+assert(css.includes(".ops-backup-history"));
 for(const forbidden of ['立即备份','恢复快照','删除快照','恢复备份'])assert(!source.includes(forbidden));
 
 assert(!css.includes("calc((100% - 8px)/3)"));

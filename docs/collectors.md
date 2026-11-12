@@ -22,7 +22,7 @@ systemd 服务的 PATH 可能与交互终端不同。Linux/NAS 可在本机私�
 
 ### 定时备份任务
 
-Linux/NAS 可使用 `backup_job` 观察 systemd 定时备份，或通过显式 `scheduler: "backrest"` 观察本机 Backrest 计划、真实备份操作和持久完整检查回执；macOS 使用 `scheduler: "launchd"` 观察 root 系统计划。只读取本机计划状态、配置及只读操作历史，不执行备份、恢复或仓库查询，不读取备份密码。不要把每日 oneshot service 加入 `units`，正常等待时的 `inactive` 不代表备份故障；真实任务运行且上一份 `read-data` 成功回执仍在 26 小时内时显示 `maintenance`（“备份运行中”）。配置和回执格式见 [配置说明](configuration.md#定时备份监测)。
+Linux/NAS 可使用 `backup_job` 观察 systemd 定时备份，或通过显式 `scheduler: "backrest"` 观察本机 Backrest 计划、真实备份操作和持久完整检查回执；macOS 使用 `scheduler: "launchd"` 观察 root 系统计划。只读取本机计划状态、配置及只读操作历史，不执行备份、恢复或仓库查询，不读取备份密码。不要把每日 oneshot service 加入 `units`，正常等待时的 `inactive` 不代表备份故障；真实任务运行且上一份 `read-data` 成功回执仍在 26 小时内时显示 `maintenance`（“备份运行中”）。Linux 回执读取要求普通文件、非符号链接、稳定设备号/inode/大小/mtime/所有者/权限，并限制为 64 KiB；POSIX 还要求 root 所有且权限为 `0644`（macOS 另要求 root:wheel）。运行态回执和 `transport_receipt` 独立读取、独立回传：某一份损坏不会吞掉另一份已知故障，缺失或损坏的已配置 transport 会显式回传 `unknown`。配置和回执格式见 [配置说明](configuration.md#定时备份监测)。
 
 更新现有采集器时保留原令牌，增量同步这项配置和采集脚本；不要为新增监测项重新生成或轮换整台宿主的令牌。macOS 的 plist 必须固定 SHA-256，系统 launchd 计划必须为 root:wheel、每日 04:00、`RunAtLoad=false`，且没有额外触发器；plist、摘要、回执或身份任一不符都显示 `unknown` 或 `down`，不会猜测成功。
 
@@ -36,6 +36,6 @@ Linux/NAS 可使用 `backup_job` 观察 systemd 定时备份，或通过显式 `
 
 先验证新脚本，停对应 collector，替换安装目录中的 collector.py 或 collector.rb，再启动；保留 config.json。配置新增检查目标时从中心登记源重新生成检查列表，保留或显式轮换当前令牌。删除检查目标时先更新远端配置再更新中心目录。
 
-备份监测涉及中心与采集器的配套协议。升级已有来源时先部署中心再升级采集器：旧采集器只回传运行态而没有新的安全快照元数据时，中心会把备份的 `up`/`maintenance` 降为 `unknown`，不会猜作成功；待中心稳定后再逐台替换采集器并观察一次正常回传。不要先把新采集器与旧中心组合运行，也不要在上线过程中清空历史 SQLite。
+备份监测涉及中心与采集器的配套协议。升级已有来源时先部署中心再升级采集器：旧采集器只回传运行态而没有本次安全快照或已配置的 transport 证据时，中心会把备份的 `up`/`maintenance` 降为 `unknown`，不会沿用上一次 `up`。新中心兼容旧采集器把 transport 嵌在 `backup.transport` 的形状，但新采集器发送顶层 `transport`；待中心稳定后再逐台替换采集器并观察一次正常回传。不要先把新采集器与旧中心组合运行，也不要在上线过程中清空历史 SQLite。中心启动时执行幂等迁移，从旧 `probe_notifiable`、事件流和嵌套 transport 重建服务级 incident、当前证据及有界历史。
 
 HTTPS 验证保持开启；不要使用关闭证书验证的方式排错。采集失败不会伪造 up，停止的已登记容器为 down，Docker 不可读取为 unknown，unhealthy 为 degraded。

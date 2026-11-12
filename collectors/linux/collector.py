@@ -1,5 +1,5 @@
 """Allowlisted local checks, outbound HTTPS only; no remote command API."""
-import json,math,os,re,shutil,subprocess,time,urllib.request
+import json,math,os,re,shutil,stat,subprocess,time,urllib.request
 from datetime import datetime,timedelta
 from pathlib import Path
 
@@ -7,6 +7,62 @@ BACKUP_ID_RE=re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
 TRANSPORT_ERROR_RE=re.compile(r'^[a-z][a-z0-9_]{0,63}$')
 BACKREST_PAGE_SIZE=256
 TRANSPORT_MAX_AGE=900
+RECEIPT_MAX_BYTES=65536
+BACKUP_RECEIPT_MODES=frozenset((0o600,0o644))
+TRANSPORT_RECEIPT_MODES=frozenset((0o644,))
+
+def _stable_identity(value):
+    return (value.st_dev,value.st_ino,value.st_size,value.st_mtime_ns,
+            value.st_uid,value.st_mode)
+
+def _validate_receipt_stat(value, allowed_modes):
+    if not stat.S_ISREG(value.st_mode):
+        raise ValueError('receipt is not a regular file')
+    if value.st_size<0 or value.st_size>RECEIPT_MAX_BYTES:
+        raise ValueError('receipt too large')
+    if os.name=='posix':
+        mode=stat.S_IMODE(value.st_mode)
+        if value.st_uid!=0 or mode not in allowed_modes:
+            raise ValueError('receipt ownership or mode invalid')
+
+def controlled_receipt(path, allowed_modes=BACKUP_RECEIPT_MODES):
+    """Read a bounded root-owned regular JSON file without following links."""
+    if not isinstance(path,str) or not path:
+        raise ValueError('receipt path missing')
+    allowed_modes=frozenset(allowed_modes)
+    if not allowed_modes or not allowed_modes.issubset(
+            BACKUP_RECEIPT_MODES | TRANSPORT_RECEIPT_MODES):
+        raise ValueError('receipt mode policy invalid')
+    before=os.lstat(path)
+    _validate_receipt_stat(before,allowed_modes)
+    flags=os.O_RDONLY
+    flags|=getattr(os,'O_CLOEXEC',0)
+    flags|=getattr(os,'O_NOFOLLOW',0)
+    descriptor=os.open(path,flags)
+    try:
+        opened=os.fstat(descriptor)
+        if (not stat.S_ISREG(opened.st_mode) or
+                _stable_identity(opened)!=_stable_identity(before)):
+            raise ValueError('receipt changed before read')
+        _validate_receipt_stat(opened,allowed_modes)
+        with os.fdopen(descriptor,'rb',closefd=True) as stream:
+            descriptor=-1
+            data=stream.read(RECEIPT_MAX_BYTES+1)
+    finally:
+        if descriptor>=0:
+            os.close(descriptor)
+    after=os.lstat(path)
+    _validate_receipt_stat(after,allowed_modes)
+    if (len(data)>RECEIPT_MAX_BYTES or
+            _stable_identity(after)!=_stable_identity(before)):
+        raise ValueError('receipt changed during read')
+    try:
+        value=json.loads(data.decode('utf-8'))
+    except (UnicodeError,ValueError) as error:
+        raise ValueError('receipt is not valid JSON') from error
+    if not isinstance(value,dict):
+        raise ValueError('receipt must be an object')
+    return value
 
 def run(args):
     try:return subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,timeout=8)
@@ -166,14 +222,14 @@ def backrest_job_state(job, server):
             if completed[0] == 7:
                 return 'degraded'
             _, snapshot, started, _ = completed
-        receipt = json.loads(Path(job['receipt']).read_text(encoding='utf-8'))
-        if not isinstance(receipt, dict):
-            return 'unknown'
+        receipt = controlled_receipt(job['receipt'])
         receipt_status = receipt.get('status')
-        if receipt_status not in ('success', 'failed', 'failure', 'error'):
+        if receipt_status not in ('success', 'running', 'failed', 'failure', 'error'):
             return 'unknown'
         if receipt_status in ('failed', 'failure', 'error'):
             return 'down'
+        if receipt_status == 'running' and not running:
+            return 'unknown'
         checked = receipt.get('checked')
         if checked is None:
             return 'unknown'
@@ -247,14 +303,14 @@ def backup_job_state(job, server):
     # A running retry can retain the previous failure result until it exits.
     # On reboot systemd may forget the last exit, so rely on a persistent receipt.
     try:
-        receipt = json.loads(Path(job['receipt']).read_text(encoding='utf-8'))
-        if not isinstance(receipt, dict):
-            return 'unknown'
+        receipt = controlled_receipt(job['receipt'])
         receipt_status = receipt.get('status')
-        if receipt_status not in ('success', 'failed', 'failure', 'error'):
+        if receipt_status not in ('success', 'running', 'failed', 'failure', 'error'):
             return 'unknown'
         if receipt_status in ('failed', 'failure', 'error'):
             return 'down'
+        if receipt_status == 'running' and not running:
+            return 'unknown'
         checked = receipt.get('checked')
         if checked is None:
             return 'unknown'
@@ -287,7 +343,7 @@ def backup_job_state(job, server):
     return 'maintenance' if running else 'up'
 
 
-def receipt_metadata(job, server):
+def receipt_metadata(job, server, now=None):
     """Return a bounded snapshot summary; never return paths or raw errors."""
     if not isinstance(job, dict):
         return None
@@ -295,8 +351,8 @@ def receipt_metadata(job, server):
     if not isinstance(path,str) or not path:
         return None
     try:
-        receipt=json.loads(Path(path).read_text(encoding='utf-8'))
-        if (not isinstance(receipt,dict) or receipt.get('status')!='success' or
+        receipt=controlled_receipt(path,BACKUP_RECEIPT_MODES)
+        if (receipt.get('status') not in ('success','running') or
                 receipt.get('checked') is not True or receipt.get('profile')!=server or
                 receipt.get('check_mode')!='read-data' or
                 not isinstance(receipt.get('snapshot'),str) or
@@ -307,14 +363,11 @@ def receipt_metadata(job, server):
         finished=datetime.fromisoformat(stamp[:-1]+'+00:00' if stamp.endswith('Z') else stamp)
         if finished.utcoffset()!=timedelta(0):
             return None
-        now=time.time();checked=finished.timestamp()
+        now=time.time() if now is None else now;checked=finished.timestamp()
         if checked<0 or checked>now+300:
             return None
         result={'schema_version':1,'checked_at':checked,
                 'snapshot_id':receipt['snapshot'],'check_mode':'read-data'}
-        transport=transport_metadata(job.get('transport_receipt'),server,now)
-        if transport is not None:
-            result['transport']=transport
         return result
     except (OSError,UnicodeError,ValueError,TypeError,OverflowError):
         return None
@@ -330,8 +383,8 @@ def transport_metadata(path, server, now):
     if not isinstance(path,str) or not path:
         return None
     try:
-        receipt=json.loads(Path(path).read_text(encoding='utf-8'))
-        if (not isinstance(receipt,dict) or receipt.get('schema')!=1 or
+        receipt=controlled_receipt(path,TRANSPORT_RECEIPT_MODES)
+        if (receipt.get('schema')!=1 or
                 receipt.get('profile')!=server or
                 receipt.get('status') not in ('up','down','unknown') or
                 not isinstance(receipt.get('checked_utc'),str)):
@@ -360,6 +413,10 @@ def transport_metadata(path, server, now):
         return {'checked_at':timestamp,'state':state,
                 'unauthenticated_status':unauth,'config_status':config,
                 'error_code':error}
+    except FileNotFoundError:
+        return {'checked_at':float(now),'state':'unknown',
+                'unauthenticated_status':None,'config_status':None,
+                'error_code':'receipt_missing'}
     except (OSError,UnicodeError,ValueError,TypeError,OverflowError):
         return {'checked_at':float(now),'state':'unknown',
                 'unauthenticated_status':None,'config_status':None,
@@ -416,6 +473,11 @@ def collect(config):
             elif state in ('up','maintenance'):
                 state='unknown'
                 observation['state']='unknown'
+            transport_path=(service['backup_job'].get('transport_receipt')
+                            if isinstance(service['backup_job'],dict) else None)
+            transport=transport_metadata(transport_path,config.get('server'),time.time())
+            if transport is not None:
+                observation['transport']=transport
         result[service['id']]=observation
     metrics={}
     try:metrics['load1']=round(os.getloadavg()[0],2)

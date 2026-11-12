@@ -52,16 +52,19 @@ Linux/NAS 的服务项可设置以下字段；不要同时设置 `containers`、
 
 ### 安全回传协议
 
-采集器以独立主机令牌 `POST /_ops/ingest`。备份服务只能回传 `state` 和可选的 `backup`；普通服务只允许 `state`，且 `maintenance` 保留给备份运行态。服务 ID 必须存在且属于该令牌对应主机，探测型服务由中心负责，不能由采集器回传。顶层只允许 `services` 与 `metrics`；未知服务、跨主机服务、未知服务观测字段、错误类型或超限请求会使整包返回 HTTP 400，且中心在完成整包校验前不写入任何服务状态。`metrics` 只持久化 `load1`、`memory_percent`、`disk_percent`、`uptime_seconds`，其他指标键被过滤。
+采集器以独立主机令牌 `POST /_ops/ingest`。备份服务可回传 `state`、`backup` 和独立的 `transport`；普通服务只允许 `state`，且 `maintenance` 保留给备份运行态。服务 ID 必须存在且属于该令牌对应主机，探测型服务由中心负责，不能由采集器回传。顶层只允许 `services` 与 `metrics`；未知服务、跨主机服务、未知服务观测字段、错误类型或超限请求会使整包返回 HTTP 400，且中心在完成整包校验前不写入任何服务状态。`metrics` 只持久化 `load1`、`memory_percent`、`disk_percent`、`uptime_seconds`，其他指标键被过滤。
 
-备份元数据是严格白名单对象：
+备份和上传通路证据使用两个严格白名单对象：
 
 ```json
 {
-  "schema_version": 1,
-  "checked_at": 1767225600.0,
-  "snapshot_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "check_mode": "read-data",
+  "state": "up",
+  "backup": {
+    "schema_version": 1,
+    "checked_at": 1767225600.0,
+    "snapshot_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "check_mode": "read-data"
+  },
   "transport": {
     "checked_at": 1767225600.0,
     "state": "up",
@@ -72,11 +75,11 @@ Linux/NAS 的服务项可设置以下字段；不要同时设置 `containers`、
 }
 ```
 
-根对象只允许上述五个字段，`transport` 可选；出现 `receipt_path`、异常原文、主机地址、令牌或其他字段会整项判为无效。`schema_version` 必须为整数 `1`，`checked_at` 是有限、非负的 Unix 秒且最多领先中心 300 秒；`check_mode` 严格为 `read-data`。`snapshot_id` 为 1–128 个字符，只能以字母或数字开始，并只含字母、数字、点、下划线、冒号和连字符。`transport` 出现时只允许五个字段；`state` 只能是 `up`、`down` 或 `unknown`，未认证状态只能是 `null`/`401`，配置状态只能是 `null`/`pinned`，`error_code` 只能是小写稳定分类。`up` 必须同时具有 401、pinned 且无错误。
+`backup` 只允许上述四个字段。出现 `receipt_path`、异常原文、主机地址、令牌或未知字段会使本次备份证据无效。`schema_version` 必须为整数 `1`，`checked_at` 是有限、非负的 Unix 秒且最多领先中心 300 秒；`check_mode` 严格为 `read-data`。`snapshot_id` 为 1–128 个字符，只能以字母或数字开始，并只含字母、数字、点、下划线、冒号和连字符。配置了 `transport_receipt` 时，`transport` 只允许五个字段；`state` 只能是 `up`、`down` 或 `unknown`，未认证状态只能是 `null`/`401`，配置状态只能是 `null`/`pinned`，`error_code` 只能是小写稳定分类。`up` 必须同时具有 401、pinned 且无错误。兼容期仍接受旧采集器把同一 transport 对象嵌在 `backup.transport`；顶层字段优先，两者同时出现时必须完全一致。
 
-中心会保留最后一次有效元数据供页面说明，但不会拿它覆盖本次无效或缺失观测。回传的 `checked_at` 早于已保存值，或时间相同但快照 ID 不同，会被拒绝，旧值也不能回滚新值。`up` 与 `maintenance` 都必须同时得到本次有效、且未超过对应 `max_age_seconds` 的安全快照；缺失或结构无效时运行态降为 `unknown`，结构有效但过期时降为 `down`。上传通路明确为 `down` 时同一次观测的有效备份状态也记录为 `down`。上传通路回执超过 900 秒会在采集器与中心两侧投影为 `down`/`stale`，不会因页面刷新而重新变绿。
+中心分表持久化备份快照、当前 transport 证据以及各最多 20 条的安全历史，只保留 ID、时间、状态和稳定错误分类；不会保存路径、令牌或异常原文。中心保留最后一次有效快照供页面说明，但本次缺失或无效证据不会复用旧值。回传的 `checked_at` 早于已保存值，或时间相同但快照 ID 不同，会被拒绝，旧值也不能回滚新值。`up` 与 `maintenance` 都必须得到本次有效、且未超过对应 `max_age_seconds` 的安全快照；缺失或结构无效时运行态降为 `unknown`，结构有效但过期时降为 `down`。配置了上传通路时，本次缺少 transport、transport 无效或状态未知同样降为 `unknown`；transport 明确为 `down` 时即使备份回执损坏，聚合运行态仍为 `down`。上传通路回执超过 900 秒会在采集器与中心两侧投影为 `down`/`stale`，不会因页面刷新而重新变绿。
 
-回执必须是 JSON 对象，`status` 严格为 `success`，`checked` 严格为布尔值 `true`，`check_mode` 必须是字符串 `read-data`，`profile` 与采集配置的 `server` 完全一致，`snapshot` 是非空字符串，`utc` 是带 UTC 时区的有效 ISO 时间（`+00:00` 或 `Z`）。`checked=false` 表示备份任务明确报告未完成完整检查并显示 `down`；`checked` 为数字、字符串或其他类型，以及 `check_mode` 缺失、为空或非字符串时，表示回执格式无法确认并显示 `unknown`。合法的其他非空 `check_mode` 字符串表示检查不满足全仓读检要求并显示 `down`。采集器不会访问仓库验证快照，回执应由受信任的本机备份任务维护。
+回执必须是 JSON 对象。Linux systemd/Backrest 的 `status` 为 `success` 或任务运行中的 `running`，后者的快照字段仍代表上一份已完成并成功读检的副本；macOS 使用 `success`/`running` 的原子回执。`checked` 严格为布尔值 `true`，`check_mode` 必须是字符串 `read-data`，`profile` 与采集配置的 `server` 完全一致，`snapshot` 是非空字符串，`utc` 是带 UTC 时区的有效 ISO 时间（`+00:00` 或 `Z`）。`checked=false` 表示备份任务明确报告未完成完整检查并显示 `down`；`checked` 为数字、字符串或其他类型，以及 `check_mode` 缺失、为空或非字符串时，表示回执格式无法确认并显示 `unknown`。合法的其他非空 `check_mode` 字符串表示检查不满足全仓读检要求并显示 `down`。采集器不会访问仓库验证快照，回执应由受信任的本机备份任务维护。
 
 - 定时器必须 `active` 且 `enabled`（含 `enabled-runtime`）；停用、停止或失败显示 `down`。
 - service 最近一次明确执行失败显示 `down`，即使仍有旧成功回执；正常等待中的 `inactive` 不算故障。正在运行或重试且上一份成功回执仍有效、未超过 26 小时时显示 `maintenance`（“备份运行中”），不计入不可用，也不触发告警；运行中若回执已过期则显示 `down`，回执缺失或损坏则显示 `unknown`。
@@ -136,7 +139,7 @@ macOS 使用 root-owned 的系统 LaunchDaemon，并固定完整 plist 摘要：
 
 ### 通知边界
 
-备份运行中的 `maintenance` 和未能确认的 `unknown` 会写入历史与页面，但不发送异常邮件；中性状态也不会清除此前已经确认的故障。若来源从 `down`/`degraded` 进入 `maintenance` 或 `unknown` 后再次异常，不重复发送同一事故；之后真正恢复为 `up` 时仍发送一次恢复邮件。没有此前的可通知故障时，`up` 不发送孤立恢复邮件。上传通路 `down` 使用同一 `down` 事故语义，恢复后发送一次恢复邮件。
+通知按服务级持久 incident 判定，不按入口、宿主或上传通路分别计数。备份运行中的 `maintenance` 和未能确认的 `unknown` 会写入历史与页面，但不发送异常或恢复邮件；这些中性状态也不会清除此前已经确认的故障。同一 incident 内跨来源再次异常不重复发信；只有服务真正恢复到 `up` 时才关闭 incident 并发送一次恢复邮件。关闭后再次发生独立故障会重新开启 incident 并再次通知。没有此前可通知故障时，`up` 不发送孤立恢复邮件。上传通路 `down` 与备份故障共用该 incident 语义。
 
 ## HTTP 探测重试与告警防抖
 

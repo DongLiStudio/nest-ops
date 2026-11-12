@@ -126,7 +126,7 @@ class HistoryTests(unittest.TestCase):
                 with patch.object(m.time,'time',return_value=stamp+1):
                     m.notify_pending()
         self.assertEqual(smtp.send_message.call_count,2)
-        self.assertEqual(m.DB.execute('SELECT count(*) FROM notices').fetchone()[0],5)
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM notices').fetchone()[0],2)
 
     def test_maintenance_and_unknown_transitions_do_not_send_notifications(self):
         config=Path(tmp.name)/'notify-neutral-only.json'
@@ -143,8 +143,7 @@ class HistoryTests(unittest.TestCase):
                 with patch.object(m.time,'time',return_value=now+offset+1):
                     m.notify_pending()
         self.assertEqual(smtp.send_message.call_count,0)
-        self.assertEqual(m.DB.execute(
-            "SELECT count(*) FROM notices WHERE status='skipped'").fetchone()[0],2)
+        self.assertEqual(m.DB.execute('SELECT count(*) FROM notices').fetchone()[0],0)
     def test_statistics_exclude_backup_maintenance_from_availability_and_incidents(self):
         result=m.statistics([(0,60,'up'),(60,90,'maintenance')],0,90)
         self.assertEqual(result['availability'],100.0)
@@ -187,7 +186,9 @@ class HistoryTests(unittest.TestCase):
     def test_event_pagination_beyond_200_and_stable_anchor(self):
         now=time.time()
         with m.DB:
-            for i in range(240):m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES(?,?,'up','down','test')",(sid,now-i))
+            for i in range(240):
+                event=m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES(?,?,'up','down','test')",(sid,now-i)).lastrowid
+                m.DB.execute('INSERT INTO notifiable_events VALUES(?)',(event,))
             m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES('retired',?,'up','down','hidden')",(now,))
         first=m.event_page('24h',1,15)
         self.assertEqual(first['total'],240);self.assertEqual(first['pages'],16)
@@ -197,7 +198,9 @@ class HistoryTests(unittest.TestCase):
         self.assertFalse(set(e['id'] for e in first['items']) & set(e['id'] for e in last['items']))
         self.assertEqual(m.event_page('24h',999)['page'],16)
     def test_event_pagination_validation_and_window(self):
-        with m.DB:m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES(?,?,'up','down','old')",(sid,time.time()-2*86400))
+        with m.DB:
+            event=m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES(?,?,'up','down','old')",(sid,time.time()-2*86400)).lastrowid
+            m.DB.execute('INSERT INTO notifiable_events VALUES(?)',(event,))
         self.assertEqual(m.event_page('24h')['total'],0)
         self.assertEqual(m.event_page('7d')['total'],1)
         for args in [('invalid',1,15),('24h',0,15),('24h',1,101)]:
@@ -208,12 +211,14 @@ class HistoryTests(unittest.TestCase):
         with m.DB:
             down=m.DB.execute("INSERT INTO events(service,time,old,state,detail) "
                               "VALUES(?,?,'up','down','failed')",(sid,now-30)).lastrowid
+            m.DB.execute('INSERT INTO notifiable_events VALUES(?)',(down,))
             m.DB.execute("INSERT INTO events(service,time,old,state,detail) "
                          "VALUES(?,?,'down','maintenance','running')",(sid,now-20))
             m.DB.execute("INSERT INTO events(service,time,old,state,detail) "
                          "VALUES(?,?,'maintenance','unknown','gap')",(sid,now-10))
             recovered=m.DB.execute("INSERT INTO events(service,time,old,state,detail) "
                                    "VALUES(?,?,'unknown','up','recovered')",(sid,now)).lastrowid
+            m.DB.execute('INSERT INTO notifiable_events VALUES(?)',(recovered,))
         page=m.event_page('24h',1,15,sid)
         self.assertEqual([item['id'] for item in page['items']],[recovered,down])
         self.assertEqual(m.previous_notifiable_state(sid,recovered),'down')
@@ -243,7 +248,10 @@ class HistoryTests(unittest.TestCase):
     def setUp(self):
         with m.LOCK,m.DB:
             for table in ('probe_attempts','probe_alert_state','probe_notifiable',
-                          'hosts','host_health','backup_metadata','service_channels'):
+                          'notifiable_events','service_incidents',
+                          'hosts','host_health','backup_metadata','transport_evidence',
+                          'transport_history','backup_snapshots','service_channels',
+                          'schema_migrations'):
                 m.DB.execute('DELETE FROM '+table)
             m.DB.execute('DELETE FROM spans')
             m.DB.execute('DELETE FROM events')
@@ -488,7 +496,13 @@ class HistoryTests(unittest.TestCase):
             with patch.object(m.time,'time',return_value=now+5):m.notify_pending()
             m.probe_cycle(service,True,'HTTP 200',now=now+6)
             with patch.object(m.time,'time',return_value=now+7):m.notify_pending()
-        self.assertEqual(smtp.send_message.call_count,2)
+            m.update_service_channel(service_id,'host','down',now=now+8,service=service)
+            with patch.object(m.time,'time',return_value=now+9):m.notify_pending()
+            m.update_service_channel(service_id,'host','up',now=now+10,service=service)
+            with patch.object(m.time,'time',return_value=now+11):m.notify_pending()
+        self.assertEqual(smtp.send_message.call_count,4)
+        self.assertEqual(m.DB.execute(
+            'SELECT count(*) FROM notifiable_events').fetchone()[0],4)
 
     def test_maintenance_state_is_reserved_for_backup_services(self):
         service=next(item for item in m.SERVICES.values()
@@ -681,6 +695,59 @@ class HistoryTests(unittest.TestCase):
             'SELECT state FROM events WHERE service=? ORDER BY id',
             (service_id,))],['down','up'])
 
+    def test_transport_up_cannot_survive_a_later_payload_that_omits_transport(self):
+        service_id='backup:transport-no-reuse';host='demo-host';now=time.time()-2
+        service=self.backup_service(service_id,host,transport=True)
+        transport_up={'checked_at':now,'state':'up','unauthenticated_status':401,
+                      'config_status':'pinned','error_code':None}
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True):
+            status,_=self.call_ingest({'services':{service_id:{
+                'state':'up','backup':self.backup_payload(
+                    now,snapshot='snapshot-old'),
+                'transport':transport_up}}},host=host)
+            self.assertEqual(status,200)
+            self.assertEqual(m.DB.execute(
+                'SELECT state FROM spans WHERE service=? ORDER BY id DESC LIMIT 1',
+                (service_id,)).fetchone()[0],'up')
+            status,_=self.call_ingest({'services':{service_id:{
+                'state':'up','backup':self.backup_payload(
+                    now+1,snapshot='snapshot-new',checked_at=now+1)}}},host=host)
+            self.assertEqual(status,200)
+            item=m.build_snapshot('24h')['services'][0]
+        self.assertEqual(item['state'],'unknown')
+        self.assertEqual(item['backup']['transport_evidence_state'],'missing')
+        self.assertEqual(item['backup']['transport']['state'],'unknown')
+        self.assertEqual(item['backup']['transport']['error_code'],'receipt_missing')
+        self.assertIsNotNone(item['backup']['transport_last_valid'])
+        self.assertEqual(item['backup']['transport_last_valid']['state'],'up')
+
+    def test_transport_down_survives_invalid_backup_receipt_and_unifies_summaries(self):
+        service_id='backup:receipt-and-transport';host='demo-host';now=time.time()-2
+        service=self.backup_service(service_id,host,transport=True)
+        invalid_backup={'schema_version':1,'checked_at':now,
+                        'snapshot_id':'snapshot-invalid','check_mode':'metadata'}
+        transport_down={'checked_at':now,'state':'down',
+                        'unauthenticated_status':None,'config_status':None,
+                        'error_code':'tunnel_closed'}
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True):
+            status,body=self.call_ingest({'services':{service_id:{
+                'state':'up','backup':invalid_backup,'transport':transport_down}}},
+                host=host)
+            self.assertEqual(status,200)
+            self.assertEqual(body['rejected_backup_metadata'],1)
+            view=m.build_snapshot('24h')
+            item=view['services'][0]
+            alerts=m.event_page('24h',1,15,service_id)
+        self.assertEqual(item['state'],'down')
+        self.assertEqual(item['effective_state'],'down')
+        self.assertEqual(item['backup']['metadata_state'],'invalid')
+        self.assertEqual(item['backup']['transport']['state'],'down')
+        self.assertEqual(view['summary']['abnormal'],1)
+        self.assertEqual(view['backup_summary']['abnormal'],1)
+        self.assertEqual(alerts['items'][0]['state'],'down')
+
     def test_transport_age_creates_consistent_abnormal_event_and_notice(self):
         service_id='backup:transport-age';host='demo-host';now=time.time()-20
         service=self.backup_service(service_id,host,transport=True)
@@ -723,6 +790,42 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(m.DB.execute(
             "SELECT count(*) FROM notices WHERE status='sent'").fetchone()[0],1)
 
+    def test_age_without_ingest_creates_one_persistent_down_edge_and_email(self):
+        service_id='backup:age-no-ingest';host='demo-host';now=time.time()-2
+        service=self.backup_service(service_id,host,max_age=60)
+        config=Path(tmp.name)/'notify-age-no-ingest.json'
+        config.write_text(json.dumps(dict(
+            sender='monitor@example.invalid',recipient='owner@example.invalid',
+            address='smtps://smtp.example.invalid:465',
+            username='test',password='fixture')))
+        smtp=unittest.mock.MagicMock();smtp.__enter__.return_value=smtp
+        smtp.send_message.return_value={}
+        payload=self.backup_payload(now,snapshot='snapshot-age',checked_at=now)
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),patch.dict(
+                m.TOKENS,{host:'secret'},clear=True),patch.dict(
+                os.environ,{'OPS_NOTIFY':str(config)}),patch.object(
+                m.smtplib,'SMTP_SSL',return_value=smtp):
+            self.assertEqual(self.call_ingest({'services':{service_id:{
+                'state':'up','backup':payload}}},host=host)[0],200)
+            stale_at=now+61
+            m.refresh_channel_aggregates(now=stale_at)
+            with patch.object(m.time,'time',return_value=stale_at+1):
+                m.notify_pending();m.notify_pending()
+            m.refresh_channel_aggregates(now=stale_at+1)
+            with patch.object(m.time,'time',return_value=stale_at+2):
+                m.notify_pending()
+            with patch.object(m.time,'time',return_value=stale_at+2):
+                item=m.build_snapshot('24h')['services'][0]
+        self.assertEqual(item['state'],'down')
+        self.assertFalse(item['backup']['fresh'])
+        self.assertEqual(smtp.send_message.call_count,1)
+        self.assertEqual(m.DB.execute(
+            'SELECT count(*) FROM events WHERE service=?',(service_id,)).fetchone()[0],1)
+        self.assertEqual(m.DB.execute(
+            'SELECT count(*) FROM notifiable_events').fetchone()[0],1)
+        self.assertEqual(m.DB.execute(
+            "SELECT count(*) FROM notices WHERE status='sent'").fetchone()[0],1)
+
     def test_transport_missing_is_unknown_without_notice(self):
         service_id='backup:transport-missing';host='demo-host';now=time.time()-20
         service=self.backup_service(service_id,host,transport=True)
@@ -748,6 +851,129 @@ class HistoryTests(unittest.TestCase):
             (service_id,)).fetchone()[0],'unknown')
         self.assertEqual(smtp.send_message.call_count,0)
 
+    def test_snapshot_and_transport_history_are_bounded_newest_first(self):
+        service_id='backup:history';host='demo-host';now=time.time()-1
+        service=self.backup_service(service_id,host,transport=True)
+        base=now-100
+        with patch.dict(m.SERVICES,{service_id:service},clear=True):
+            for index in range(25):
+                value={'schema_version':1,'checked_at':base+index,
+                       'snapshot_id':f'snapshot-{index:02d}','check_mode':'read-data'}
+                m.update_backup_metadata(
+                    service_id,host,{'backup':value},now)
+                transport={'checked_at':base+index,'state':'up',
+                           'unauthenticated_status':401,'config_status':'pinned',
+                           'error_code':None}
+                m.update_transport_evidence(
+                    service_id,host,'valid',transport,now)
+            metadata=m.backup_metadata_for(service,now)
+            for _ in range(25):
+                m.update_transport_evidence(
+                    service_id,host,'missing',None,now+1)
+            after_missing=m.backup_metadata_for(service,now+1)
+        self.assertEqual(len(metadata['snapshot_history']),20)
+        self.assertEqual(len(metadata['transport_history']),20)
+        self.assertEqual(metadata['snapshot_history'][0]['snapshot_id'],'snapshot-24')
+        self.assertEqual(metadata['snapshot_history'][-1]['snapshot_id'],'snapshot-05')
+        self.assertEqual(m.DB.execute(
+            'SELECT count(*) FROM backup_snapshots').fetchone()[0],20)
+        self.assertEqual(m.DB.execute(
+            'SELECT count(*) FROM transport_history').fetchone()[0],20)
+        self.assertEqual(after_missing['transport_evidence_state'],'missing')
+        self.assertEqual(after_missing['transport_last_valid']['state'],'up')
+        self.assertEqual(
+            after_missing['transport_last_valid']['checked_at'],base+24)
+
+    def test_removing_transport_configuration_retains_only_history(self):
+        service_id='backup:transport-removed';host='demo-host';now=time.time()
+        service=self.backup_service(service_id,host,transport=False)
+        transport={'checked_at':now,'state':'up',
+                   'unauthenticated_status':401,'config_status':'pinned',
+                   'error_code':None}
+        with patch.dict(m.SERVICES,{service_id:service},clear=True):
+            m.update_transport_evidence(service_id,host,'valid',transport,now)
+            metadata=m.backup_metadata_for(service,now)
+            summary=m.build_snapshot('24h')['backup_summary']
+        self.assertFalse(metadata['transport_configured'])
+        self.assertIsNone(metadata['transport'])
+        self.assertIsNone(metadata['transport_evidence_state'])
+        self.assertIsNone(metadata['transport_last_valid'])
+        self.assertEqual(metadata['transport_history'][0]['state'],'up')
+        self.assertEqual(summary['transport_missing'],1)
+        self.assertEqual(summary['transport_up'],0)
+
+    def test_state_migration_is_idempotent_and_imports_legacy_nested_transport(self):
+        service_id='backup:migrate';host='demo-host';now=time.time()-100
+        service=self.backup_service(service_id,host,transport=True)
+        legacy={'schema_version':1,'checked_at':now-10,
+                'snapshot_id':'snapshot-legacy','check_mode':'read-data',
+                'transport':{'checked_at':now-5,'state':'up',
+                             'unauthenticated_status':401,
+                             'config_status':'pinned','error_code':None}}
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),m.DB:
+            down=m.DB.execute(
+                "INSERT INTO events(service,time,old,state,detail,source) "
+                "VALUES(?,?,'unknown','down','legacy','aggregate')",
+                (service_id,now-50)).lastrowid
+            up=m.DB.execute(
+                "INSERT INTO events(service,time,old,state,detail,source) "
+                "VALUES(?,?,'down','up','legacy recovery','aggregate')",
+                (service_id,now-30)).lastrowid
+            m.DB.execute(
+                'INSERT INTO backup_metadata '
+                '(service,host,observed_at,schema_version,metadata_state,last_valid_at,'
+                'checked_at,snapshot_id,check_mode,metadata_json) '
+                'VALUES(?,?,?,?,?,?,?,?,?,?)',
+                (service_id,host,now,1,'valid',now,now-10,'snapshot-legacy',
+                 'read-data',json.dumps(legacy)))
+        with patch.dict(m.SERVICES,{service_id:service},clear=True):
+            self.assertTrue(m.migrate_state_model(now))
+            self.assertFalse(m.migrate_state_model(now+1))
+            metadata=m.backup_metadata_for(service,now)
+        self.assertEqual({row[0] for row in m.DB.execute(
+            'SELECT event FROM notifiable_events')},{down,up})
+        self.assertEqual(metadata['snapshot_history'][0]['snapshot_id'],'snapshot-legacy')
+        self.assertEqual(metadata['transport_evidence_state'],'valid')
+        self.assertEqual(metadata['transport']['state'],'up')
+        self.assertEqual(m.DB.execute(
+            'SELECT count(*) FROM schema_migrations').fetchone()[0],1)
+
+    def test_state_migration_preserves_history_and_suppresses_stale_mail_burst(self):
+        service_id='backup:migration-history';host='demo-host';now=time.time()
+        service=self.backup_service(service_id,host,transport=False)
+        with patch.dict(m.SERVICES,{service_id:service},clear=True),m.DB:
+            first=m.DB.execute(
+                "INSERT INTO events(service,time,old,state,detail,source) "
+                "VALUES(?,?,'up','down','old outage','aggregate')",
+                (service_id,now-1000)).lastrowid
+            recovery=m.DB.execute(
+                "INSERT INTO events(service,time,old,state,detail,source) "
+                "VALUES(?,?,'down','up','old recovery','aggregate')",
+                (service_id,now-800)).lastrowid
+            current=m.DB.execute(
+                "INSERT INTO events(service,time,old,state,detail,source) "
+                "VALUES(?,?,'up','down','current outage','aggregate')",
+                (service_id,now-100)).lastrowid
+            m.DB.execute(
+                "INSERT INTO notices(event,status,attempts,last_attempt,error_kind) "
+                "VALUES(?,'sent',1,?,NULL)",(first,now-999))
+            event_count=m.DB.execute('SELECT count(*) FROM events').fetchone()[0]
+        with patch.dict(m.SERVICES,{service_id:service},clear=True):
+            self.assertTrue(m.migrate_state_model(now))
+        self.assertEqual(m.DB.execute(
+            'SELECT count(*) FROM events').fetchone()[0],event_count)
+        self.assertEqual(dict(m.DB.execute(
+            'SELECT event,status FROM notices ORDER BY event').fetchall()),{
+                first:'sent',recovery:'skipped'})
+        self.assertIsNone(m.DB.execute(
+            'SELECT status FROM notices WHERE event=?',(current,)).fetchone())
+        self.assertEqual({row[0] for row in m.DB.execute(
+            'SELECT event FROM notifiable_events')},{first,recovery,current})
+        incident=m.DB.execute(
+            'SELECT is_open,outage_event FROM service_incidents WHERE service=?',
+            (service_id,)).fetchone()
+        self.assertEqual(incident,(1,current))
+
     def test_public_snapshot_hides_private_monitor_configuration_and_flags_service(self):
         private={'id':'private:backup','server':'demo-host','name':'Private backup',
                  'category':'开发与运维','app':False,'href':None,'containers':[],'units':[],
@@ -767,15 +993,21 @@ class HistoryTests(unittest.TestCase):
         service={'id':'demo:backup','server':'demo-host','name':'Backup',
                  'category':'ops','app':False,'href':None,'containers':[],'units':[],
                  'backup_job':{'timer':'demo.timer','service':'demo.service',
-                               'receipt':'/var/lib/demo/health.json'}}
+                               'receipt':'/var/lib/demo/health.json',
+                               'transport_receipt':'/var/lib/demo/transport.json'}}
         now=time.time();metadata={'schema_version':1,'checked_at':now-30,
-                                  'snapshot_id':'snapshot-1','check_mode':'read-data',
-                                  'transport':{'checked_at':now-20,'state':'down',
-                                               'unauthenticated_status':None,
-                                               'config_status':None,
-                                               'error_code':'tunnel_closed'}}
+                                  'snapshot_id':'snapshot-1','check_mode':'read-data'}
+        transport={'checked_at':now-20,'state':'down',
+                   'unauthenticated_status':None,
+                   'config_status':None,'error_code':'tunnel_closed'}
         with patch.dict(m.SERVICES,{'demo:backup':service},clear=True):
             m.update_backup_metadata('demo:backup','demo-host',{'backup':metadata},now)
+            m.update_transport_evidence(
+                'demo:backup','demo-host','valid',transport,now)
+            m.set_service_channel('demo:backup','host','up','ok',now=now)
+            m.set_service_channel(
+                'demo:backup','transport','down','transport down',now=now)
+            m.reconcile_service_channels(service,now)
             summary=m.build_snapshot('24h')['backup_summary']
         self.assertEqual(summary['registered'],1)
         self.assertEqual(summary['metadata_valid'],1)
@@ -790,6 +1022,7 @@ class HistoryTests(unittest.TestCase):
         now=time.time()-4000
         with m.DB:
             event_id=m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES(?,?,'up','down','test')",(sid,now)).lastrowid
+            m.DB.execute('INSERT INTO notifiable_events VALUES(?)',(event_id,))
         with patch.dict(os.environ,{'OPS_NOTIFY':str(config)}),patch.object(
                 m.smtplib,'SMTP_SSL',side_effect=ConnectionRefusedError('SECRET-CONNECTION')) as smtp:
             for attempt in range(7):
@@ -877,9 +1110,12 @@ class HistoryTests(unittest.TestCase):
         stats=m.statistics([],1000,2000);self.assertIsNone(stats['availability']);self.assertEqual(stats['coverage'],0)
     def test_removed_resource_events_not_exposed(self):
         m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES(?,?,'up','down','old resource event')",('retired-resource',time.time()));m.DB.commit();m.record(sid,'down',now=time.time())
-        self.assertEqual([e['service'] for e in m.snapshot('24h')['events']],[sid])
+        services=[e['service'] for e in m.snapshot('24h')['events']]
+        self.assertTrue(services)
+        self.assertEqual(set(services),{sid})
     def test_removed_resource_not_notified(self):
-        m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES(?,?,'up','down','old resource event')",('retired-resource',time.time()));m.DB.commit();note=Path(tmp.name)/'notify.json';note.write_text('{}');os.environ['OPS_NOTIFY']=str(note)
+        event=m.DB.execute("INSERT INTO events(service,time,old,state,detail) VALUES(?,?,'up','down','old resource event')",('retired-resource',time.time())).lastrowid
+        m.DB.execute('INSERT INTO notifiable_events VALUES(?)',(event,));m.DB.commit();note=Path(tmp.name)/'notify.json';note.write_text('{}');os.environ['OPS_NOTIFY']=str(note)
         try:m.notify_pending()
         finally:os.environ.pop('OPS_NOTIFY',None)
         self.assertEqual(m.DB.execute('SELECT status FROM notices ORDER BY event DESC LIMIT 1').fetchone()[0],'skipped')

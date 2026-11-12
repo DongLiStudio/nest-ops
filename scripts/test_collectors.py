@@ -239,6 +239,15 @@ class BackupJobTests(unittest.TestCase):
         self.receipt.unlink()
         self.assertEqual(self.state(), 'unknown')
 
+    def test_atomic_running_receipt_preserves_last_checked_snapshot(self):
+        self.service['ActiveState'] = 'active'
+        self.write_receipt(status='running')
+        self.assertEqual(self.state(), 'maintenance')
+        with patch.object(m.time, 'time', return_value=self.NOW):
+            metadata = m.receipt_metadata(self.job, 'demo-1')
+        self.assertEqual(metadata['snapshot_id'], 'example-snapshot')
+        self.assertEqual(metadata['check_mode'], 'read-data')
+
     def test_starting_job_is_not_failed_by_previous_attempt(self):
         self.service.update(ActiveState='activating', Result='exit-code', ExecMainStatus='1')
         self.assertEqual(self.state(), 'maintenance')
@@ -337,7 +346,14 @@ class TransportMetadataTests(unittest.TestCase):
         self.assertIsNone(m.transport_metadata(None, 'demo-1', self.NOW))
         self.assertIsNone(m.transport_metadata('', 'demo-1', self.NOW))
 
-    def test_invalid_configured_transport_remains_attached_to_backup(self):
+    def test_missing_configured_transport_is_explicit_safe_unknown(self):
+        missing = str(Path(self.temp.name) / 'missing.json')
+        self.assertEqual(m.transport_metadata(missing, 'demo-1', self.NOW), {
+            'checked_at': self.NOW, 'state': 'unknown',
+            'unauthenticated_status': None, 'config_status': None,
+            'error_code': 'receipt_missing'})
+
+    def test_invalid_configured_transport_is_independent_of_backup_metadata(self):
         self.write(age=-301)
         backup_receipt = Path(self.temp.name) / 'success-invalid-transport.json'
         backup_receipt.write_text(json.dumps({
@@ -349,8 +365,12 @@ class TransportMetadataTests(unittest.TestCase):
             value = m.receipt_metadata({
                 'receipt': str(backup_receipt),
                 'transport_receipt': str(self.receipt)}, 'demo-1')
-        self.assertEqual(value['transport']['state'], 'unknown')
-        self.assertEqual(value['transport']['error_code'], 'receipt_invalid')
+            transport = m.transport_metadata(
+                str(self.receipt), 'demo-1', self.NOW)
+        self.assertEqual(set(value), {
+            'schema_version', 'checked_at', 'snapshot_id', 'check_mode'})
+        self.assertEqual(transport['state'], 'unknown')
+        self.assertEqual(transport['error_code'], 'receipt_invalid')
 
     def test_backup_metadata_contains_only_allowlisted_safe_fields(self):
         self.write(age=30)
@@ -371,9 +391,172 @@ class TransportMetadataTests(unittest.TestCase):
                 'receipt': str(backup_receipt),
                 'transport_receipt': str(self.receipt)}, 'demo-1')
         self.assertEqual(set(value), {
-            'schema_version', 'checked_at', 'snapshot_id', 'check_mode',
-            'transport'})
+            'schema_version', 'checked_at', 'snapshot_id', 'check_mode'})
         self.assertNotIn('/private', json.dumps(value))
+
+    def test_backup_failure_does_not_drop_independent_transport_fault(self):
+        backup_receipt = Path(self.temp.name) / 'failed-backup.json'
+        backup_receipt.write_text(json.dumps({
+            'status': 'failed', 'profile': 'demo-1',
+            'snapshot': 'snapshot-1', 'checked': True,
+            'check_mode': 'read-data',
+            'utc': datetime.fromtimestamp(
+                self.NOW - 30, timezone.utc).isoformat()}), encoding='utf-8')
+        self.write(status='down', unauthenticated_status=None,
+                   authenticated_config_status=None,
+                   error_code='tunnel_closed')
+        service = {'id': 'demo-1:backup', 'backup_job': {
+            'timer': 'demo.timer', 'service': 'demo.service',
+            'receipt': str(backup_receipt),
+            'transport_receipt': str(self.receipt),
+            'max_age_seconds': 93600}}
+        with patch.object(m.shutil, 'which', return_value=None), \
+                patch.object(m.Path, 'exists', return_value=False), \
+                patch.object(m, 'systemd_properties', side_effect=[
+                    {'ActiveState': 'active', 'UnitFileState': 'enabled'},
+                    {'ActiveState': 'failed', 'Result': 'exit-code',
+                     'ExecMainStatus': '1'}]), \
+                patch.object(m.time, 'time', return_value=self.NOW):
+            observation = m.collect(
+                {'server': 'demo-1', 'services': [service]})['services'][
+                    'demo-1:backup']
+        self.assertEqual(observation['state'], 'down')
+        self.assertNotIn('backup', observation)
+        self.assertEqual(observation['transport']['state'], 'down')
+        self.assertEqual(observation['transport']['error_code'], 'tunnel_closed')
+
+
+class ControlledReceiptTests(unittest.TestCase):
+    NOW = 1_700_000_000.0
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.receipt = Path(self.temp.name) / 'receipt.json'
+        self.receipt.write_text('{"ok":true}', encoding='utf-8')
+
+    def test_bounded_stable_regular_file_is_read_as_json_object(self):
+        self.assertEqual(m.controlled_receipt(str(self.receipt)), {'ok': True})
+        self.receipt.write_bytes(b'[' * (m.RECEIPT_MAX_BYTES + 1))
+        with self.assertRaises(ValueError):
+            m.controlled_receipt(str(self.receipt))
+
+    def test_non_regular_and_changed_files_are_rejected(self):
+        with self.assertRaises((OSError, ValueError)):
+            m.controlled_receipt(self.temp.name)
+        original = m.os.fstat
+        def changed(descriptor):
+            value = original(descriptor)
+            return type('Changed', (), {
+                'st_dev': value.st_dev, 'st_ino': value.st_ino + 1,
+                'st_size': value.st_size, 'st_mtime_ns': value.st_mtime_ns,
+                'st_uid': value.st_uid, 'st_mode': value.st_mode})()
+        with patch.object(m.os, 'fstat', side_effect=changed):
+            with self.assertRaises(ValueError):
+                m.controlled_receipt(str(self.receipt))
+
+    @unittest.skipUnless(hasattr(m.os, 'symlink'), 'symlink unavailable')
+    def test_symlink_is_rejected_when_supported(self):
+        link = Path(self.temp.name) / 'receipt-link.json'
+        try:
+            link.symlink_to(self.receipt)
+        except OSError as error:
+            self.skipTest('symlink creation unavailable: ' + str(error))
+        with self.assertRaises(ValueError):
+            m.controlled_receipt(str(link))
+
+    def test_posix_owner_and_mode_policy_are_enforced(self):
+        def fake(uid, permissions):
+            return type('Stat', (), {
+                'st_dev': 1, 'st_ino': 2, 'st_size': 12,
+                'st_mtime_ns': 3,
+                'st_uid': uid, 'st_mode': m.stat.S_IFREG | permissions})()
+        with patch.object(m.os, 'name', 'posix'):
+            for permissions in (0o600, 0o644):
+                m._validate_receipt_stat(
+                    fake(0, permissions), m.BACKUP_RECEIPT_MODES)
+            m._validate_receipt_stat(
+                fake(0, 0o644), m.TRANSPORT_RECEIPT_MODES)
+            for value, allowed in (
+                    (fake(1000, 0o644), m.BACKUP_RECEIPT_MODES),
+                    (fake(0, 0o666), m.BACKUP_RECEIPT_MODES),
+                    (fake(0, 0o600), m.TRANSPORT_RECEIPT_MODES)):
+                with self.subTest(mode=value.st_mode, uid=value.st_uid), \
+                        self.assertRaises(ValueError):
+                    m._validate_receipt_stat(value, allowed)
+
+    def test_posix_backup_receipt_accepts_both_documented_modes(self):
+        receipt = Path(self.temp.name) / 'backup.json'
+        receipt.write_text(json.dumps({
+            'status': 'success', 'profile': 'demo-1',
+            'snapshot': 'snapshot-1', 'checked': True,
+            'check_mode': 'read-data',
+            'utc': datetime.fromtimestamp(
+                self.NOW - 30, timezone.utc).isoformat()}), encoding='utf-8')
+
+        def read_with_mode(permissions):
+            original_lstat = m.os.lstat
+            original_fstat = m.os.fstat
+
+            def root_owned(result):
+                return type('Stat', (), {
+                    'st_dev': result.st_dev, 'st_ino': result.st_ino,
+                    'st_size': result.st_size,
+                    'st_mtime_ns': result.st_mtime_ns,
+                    'st_uid': 0,
+                    'st_mode': m.stat.S_IFREG | permissions})()
+
+            with patch.object(m.os, 'name', 'posix'), \
+                    patch.object(
+                        m.os, 'lstat',
+                        side_effect=lambda path: root_owned(
+                            original_lstat(path))), \
+                    patch.object(
+                        m.os, 'fstat',
+                        side_effect=lambda descriptor: root_owned(
+                            original_fstat(descriptor))):
+                return m.receipt_metadata(
+                    {'receipt': str(receipt)}, 'demo-1', self.NOW)
+
+        for permissions in (0o600, 0o644):
+            with self.subTest(mode=permissions):
+                self.assertEqual(
+                    read_with_mode(permissions)['snapshot_id'],
+                    'snapshot-1')
+
+    def test_posix_transport_receipt_still_rejects_private_mode(self):
+        transport = Path(self.temp.name) / 'transport.json'
+        transport.write_text(json.dumps({
+            'schema': 1, 'profile': 'demo-1', 'status': 'up',
+            'checked_utc': datetime.fromtimestamp(
+                self.NOW - 30, timezone.utc).isoformat(),
+            'unauthenticated_status': 401,
+            'authenticated_config_status': 'pinned',
+            'config_sha256': 'a' * 64}), encoding='utf-8')
+        original_lstat = m.os.lstat
+        original_fstat = m.os.fstat
+
+        def root_owned(result):
+            return type('Stat', (), {
+                'st_dev': result.st_dev, 'st_ino': result.st_ino,
+                'st_size': result.st_size,
+                'st_mtime_ns': result.st_mtime_ns,
+                'st_uid': 0,
+                'st_mode': m.stat.S_IFREG | 0o600})()
+
+        with patch.object(m.os, 'name', 'posix'), \
+                patch.object(
+                    m.os, 'lstat',
+                    side_effect=lambda path: root_owned(
+                        original_lstat(path))), \
+                patch.object(
+                    m.os, 'fstat',
+                    side_effect=lambda descriptor: root_owned(
+                        original_fstat(descriptor))):
+            value = m.transport_metadata(
+                str(transport), 'demo-1', self.NOW)
+        self.assertEqual(value['state'], 'unknown')
+        self.assertEqual(value['error_code'], 'receipt_invalid')
 
 
 class ServiceSchemaTests(unittest.TestCase):

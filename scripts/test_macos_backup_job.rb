@@ -132,7 +132,8 @@ class MacCollectorBackupJobTests < Minitest::Test
     assert_equal 'read-data', metadata['check_mode']
     assert_equal 'a' * 64, metadata['snapshot_id']
     assert_equal (@now - 3600).to_f, metadata['checked_at']
-    assert_equal 'up', metadata['transport']['state']
+    assert_equal 'up', transport_metadata(
+      @job['transport_receipt'], 'home-compute-1', @now)['state']
   end
 
   def test_stale_receipt_is_down
@@ -193,7 +194,7 @@ class MacCollectorBackupJobTests < Minitest::Test
 
   def test_metadata_omits_paths_and_raw_receipt_content
     metadata = backup_metadata(@job, 'home-compute-1', @now)
-    assert_equal %w[checked_at check_mode schema_version snapshot_id transport].sort,
+    assert_equal %w[checked_at check_mode schema_version snapshot_id].sort,
                  metadata.keys.sort
     serialized = JSON.generate(metadata)
     refute_includes serialized, '/Library'
@@ -221,10 +222,12 @@ class MacCollectorBackupJobTests < Minitest::Test
     assert_nil backup_metadata(@job, 'home-compute-1', @now)
     @receipt_value['snapshot_id'] = 'a' * 64
     @transport_value['error_code'] = '/private/path'
-    metadata = backup_metadata(@job, 'home-compute-1', @now)
-    assert_equal 'unknown', metadata['transport']['state']
-    assert_equal 'receipt_invalid', metadata['transport']['error_code']
-    assert_equal @now.to_f, metadata['transport']['checked_at']
-    refute_includes JSON.generate(metadata), '/private'
+    backup = backup_metadata(@job, 'home-compute-1', @now)
+    metadata = transport_metadata(
+      @job['transport_receipt'], 'home-compute-1', @now)
+    assert_equal 'unknown', metadata['state']
+    assert_equal 'receipt_invalid', metadata['error_code']
+    assert_equal @now.to_f, metadata['checked_at']
+    refute_includes JSON.generate([backup, metadata]), '/private'
   end
 end
